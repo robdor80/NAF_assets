@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1423">
+  <meta name="description" content="NAF: prepara encargos visuales de Nimroel para ChatGPT, con biblias y protocolo NAP.">
+  <meta name="color-scheme" content="dark">
+  <title>NAF · Nimroel Asset Forge</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<div class="rotation-guard" role="alert" aria-hidden="true">
+  <div class="rotation-guard__content"><span aria-hidden="true" class="rotation-symbol">▯</span>
+    <strong>Usa el móvil en vertical</strong><span>NAF está diseñado en vertical para el Realme GT Neo 2.</span>
+  </div>
+</div>
+<div class="app">
+<header class="topbar">
+  <a class="identity" href="./" aria-label="NAF · Inicio">
+    <img src="./favicon.svg" width="40" height="40" alt="">
+    <span><strong>NAF</strong><small>Nimroel Asset Forge</small></span>
+  </a>
+  <nav class="header-actions" aria-label="Herramientas">
+    <span class="sync-state" id="connectivity" aria-live="polite">Local</span>
+    <button type="button" id="openDrafts" class="btn btn-ghost"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg><span>Guardados</span><span class="count" id="draftCount" hidden>0</span></button>
+  </nav>
+</header>
+
+<main class="container">
+  <div class="intro"><div><p class="eyebrow">ENCARGOS PARA CHATGPT</p><h1>¿Qué vamos a crear?</h1><p>Configura el asset y descarga el <strong>.md</strong>. Yo prepararé después la imagen y el ZIP para NAP.</p></div></div>
+  <div class="workspace">
+    <section class="editor panel" aria-label="Crear encargo">
+      <form id="requestForm" autocomplete="off">
+        <div class="section-head"><span class="step">01</span><h2>Tipo de asset</h2></div>
+        <div class="type-selector" role="radiogroup" aria-label="Tipo de asset">
+          <label class="type-option"><input type="radio" name="assetKind" value="exterior" checked><span class="type-icon" aria-hidden="true">◭</span><span>Exterior</span></label>
+          <label class="type-option"><input type="radio" name="assetKind" value="interior"><span class="type-icon" aria-hidden="true">▤</span><span>Interior</span></label>
+          <label class="type-option"><input type="radio" name="assetKind" value="portrait"><span class="type-icon" aria-hidden="true">◉</span><span>Retrato</span></label>
+        </div>
+
+        <div class="section-head spaced"><span class="step">02</span><h2>Ubicación</h2></div>
+        <div class="field-grid">
+          <div class="field"><label for="house">Territorio / Casa</label><select id="house" required></select></div>
+          <div class="field"><label for="place">Lugar</label><select id="place" required></select></div>
+          <div class="field field-wide" id="placeOtherWrap" hidden><label for="placeOther">Escribe el lugar</label><input id="placeOther" maxlength="140" placeholder="Nombre o descripción, pendiente de verificar"></div>
+        </div>
+        <p class="field-hint" id="placeNotice"></p>
+        <div class="field field-spaced">
+          <label for="subject" id="subjectLabel">Qué quieres representar</label>
+          <select id="subject"></select>
+        </div>
+        <div class="field" id="subjectOtherWrap" hidden><label for="subjectOther">Describe el tipo de lugar o personaje</label><input id="subjectOther" maxlength="180" placeholder="Ej.: cruce de caminos con puesto de carreteros"></div>
+
+        <div class="section-head spaced"><span class="step">03</span><h2>Versión</h2></div>
+        <div class="mode-selector" role="radiogroup" aria-label="Modalidad">
+          <label><input type="radio" name="mode" value="new" checked><span>Nueva</span></label>
+          <label><input type="radio" name="mode" value="variant"><span>Variante fiel</span></label>
+          <label><input type="radio" name="mode" value="inspired"><span>Inspirada en otra</span></label>
+        </div>
+        <div class="field-grid reference-fields" id="referenceFields" hidden>
+          <div class="field"><label for="referenceId">ID del asset de referencia</label><input id="referenceId" placeholder="scene_treskal_tavern_interior_001" spellcheck="false" maxlength="96"></div>
+          <div class="field"><label for="referenceName">PNG de referencia (si lo tienes)</label><input id="referenceName" placeholder="archivo_original.png" spellcheck="false" maxlength="180"></div>
+          <p class="field-hint field-wide">Para mantener la misma arquitectura o rostro, adjunta también ese PNG cuando entregues el .md en ChatGPT.</p>
+        </div>
+
+        <div class="section-head spaced"><span class="step">04</span><h2>Ambiente</h2><span class="section-note">Opcional</span></div>
+        <div class="field-grid field-grid-three">
+          <div class="field"><label for="timeOfDay">Hora</label><select id="timeOfDay">
+            <option value="automatico">Automática</option><option value="amanecer">Amanecer</option><option value="manana">Mañana</option><option value="mediodia">Mediodía</option><option value="tarde">Tarde</option><option value="atardecer">Atardecer</option><option value="noche">Noche</option>
+          </select></div>
+          <div class="field"><label for="weather">Meteorología</label><select id="weather">
+            <option value="automatico">Automática</option><option value="despejado">Despejado</option><option value="nublado">Nublado</option><option value="lluvia">Lluvia</option><option value="tormenta">Tormenta</option><option value="niebla">Niebla</option><option value="nieve">Nieve</option><option value="viento">Viento</option>
+          </select></div>
+          <div class="field"><label for="season">Estación</label><select id="season">
+            <option value="automatico">Automática</option><option value="primavera">Primavera</option><option value="verano">Verano</option><option value="otono">Otoño</option><option value="invierno">Invierno</option>
+          </select></div>
+        </div>
+
+        <div class="portrait-only" id="portraitFields" hidden>
+          <div class="section-head spaced"><h2>Rasgos del retrato</h2><span class="section-note">Opcional</span></div>
+          <div class="field-grid">
+            <div class="field"><label for="sex">Sexo</label><select id="sex"><option value="sin_definir">Sin definir</option><option value="femenino">Femenino</option><option value="masculino">Masculino</option></select></div>
+            <div class="field"><label for="age">Edad aproximada</label><input id="age" inputmode="numeric" type="number" min="0" max="250" placeholder="Ej.: 30"></div>
+            <div class="field field-wide"><label for="profession">Oficio o función</label><input id="profession" maxlength="120" placeholder="Ej.: tabernera, herrero, agricultora..."></div>
+          </div>
+        </div>
+        <div class="scene-only" id="sceneFields">
+          <details class="expandable"><summary>Más detalles de la escena <span>Opcional</span></summary>
+            <div class="field-grid expanded-grid">
+              <div class="field"><label for="scale">Escala</label><select id="scale"><option value="automatico">Automática</option><option value="reducida">Reducida</option><option value="pequena">Pequeña</option><option value="mediana">Mediana</option><option value="amplia">Amplia, si el canon lo permite</option></select></div>
+              <div class="field"><label for="people">Personas presentes</label><select id="people"><option value="automatico">Automático</option><option value="ninguna">Ninguna</option><option value="pocas">Pocas</option><option value="varias">Varias</option><option value="animado">Ambiente animado</option></select></div>
+              <div class="field" id="foodWrap" hidden><label for="foodService">¿Sirven comida?</label><select id="foodService"><option value="automatico">Por decidir</option><option value="si">Sí</option><option value="no">No</option></select></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="field field-spaced">
+          <label for="notes">Describe lo que tienes en mente <span class="optional">(opcional)</span></label>
+          <textarea id="notes" rows="5" maxlength="5000" placeholder="Ej.: taberna pequeña, solo bebida, con aldeanos hablando al calor del hogar. Sin habitaciones."></textarea>
+          <span class="field-hint">Lo que escribas manda dentro de los límites del canon de Nimroel.</span>
+        </div>
+
+        <details class="expandable bibles" id="bibleDetails"><summary>Biblias aplicables <span id="bibleCount">Automáticas</span></summary>
+          <div class="bible-inner">
+            <p>Las obligatorias se aplican siempre. Puedes añadir referencias sin sustituirlas.</p>
+            <div id="requiredBibles" class="bible-list" aria-live="polite"></div>
+            <div class="field"><label for="extraBible">Añadir biblia opcional</label><select id="extraBible"></select></div>
+            <div id="addedBibles" class="added-bibles"></div>
+          </div>
+        </details>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="downloadBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg> Descargar encargo .md</button>
+          <button type="button" class="btn btn-secondary" id="copyBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> Copiar</button>
+          <button type="button" class="btn btn-ghost save-btn" id="saveBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4h1zm2 0v6h9V4M8 20v-7h8v7"/></svg> Guardar borrador</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="summary panel" aria-label="Vista previa del encargo">
+      <div class="summary-head"><span class="summary-symbol" aria-hidden="true">✦</span><div><h2>Tu encargo</h2><p>Se actualizará mientras eliges.</p></div></div>
+      <div id="summaryBody" class="summary-body" aria-live="polite"></div>
+      <div class="summary-footer"><strong>Salida: 1 archivo .md</strong><p>El ZIP de 5 archivos lo crearé después en ChatGPT, conforme al protocolo NAP.</p></div>
+    </aside>
+  </div>
+</main>
+
+<footer class="footer"><span>NAF · RobStyle</span><span>Encargos locales · Sin API de imágenes</span></footer>
+</div>
+
+<div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+<section class="drawer" id="draftsPanel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
+  <div class="drawer-header"><div><h2 id="drawerTitle">Encargos guardados</h2><p>Solo en este dispositivo.</p></div><button type="button" class="btn btn-icon" id="closeDrafts" aria-label="Cerrar">✕</button></div>
+  <div id="draftsList" class="drafts-list"></div>
+  <button type="button" class="btn btn-secondary drawer-new" id="newRequest">+ Nuevo encargo</button>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<noscript><div class="noscript">NAF necesita JavaScript para generar y descargar los encargos .md.</div></noscript>
+</body>
+</html>
