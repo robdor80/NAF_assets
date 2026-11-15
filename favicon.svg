@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>NAF — Nexus Asset Forge</title>
+  <path d="M32 5 51 16v23L32 53 13 39V16L32 5Z" stroke="#B8D6DB" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 13 44 20v14L32 43 20 34V20L32 13Z" fill="#9ED9C2" fill-opacity=".13" stroke="#9ED9C2" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="m21 35 11-17 11 17M26 30h12" stroke="#EAF6F8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="m48 7 1.5 4.5L54 13l-4.5 1.5L48 19l-1.5-4.5L42 13l4.5-1.5L48 7Z" fill="#9ED9C2"/>
+  <path d="M25 51v5m-3-2.5h6" stroke="#9ED9C2" stroke-width="2" stroke-linecap="round"/>
+</svg>
