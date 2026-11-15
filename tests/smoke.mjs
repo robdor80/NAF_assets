@@ -30,7 +30,12 @@ function fakeElement(id) {
 function app(storageOverride) {
   const ids=[...new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(x=>x[1]))];
   const nodes=Object.fromEntries(ids.map(id=>[id,fakeElement(id)]));
-  ["time","weather","season","scale","population","camera"].forEach(id=>nodes[id].value="auto");
+  // En un navegador, las opciones ya están presentes en el HTML antes de cargar app.js.
+  for(const m of html.matchAll(/<select id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)){
+    const list=[...m[2].matchAll(/<option(?: value="([^"]*)")?[^>]*>([\s\S]*?)<\/option>/g)];
+    nodes[m[1]].options=list.map(x=>({value:x[1]??x[2],textContent:x[2]}));
+    nodes[m[1]].value=nodes[m[1]].options[0]?.value||"";
+  }
   nodes.house.value="valrik";
   const kinds=["exterior","interior","portrait"].map(id=>{const b=fakeElement(id);b.dataset.kind=id;return b;});
   const modes=["new","variant"].map(id=>{const b=fakeElement(id);b.dataset.mode=id;return b;});
@@ -92,6 +97,7 @@ test("retratos con rol y sexo obligatorios",()=>{
 test("taberna en Rodas y biblia local Edranor",()=>{
   const a=app();a.kinds[1].dispatch("click");
   a.nodes.house.value="edranor";a.nodes.house.dispatch("change");
+  a.nodes.place.value="rodas";
   a.nodes.subject.value="taberna";
   const x=a.api.request();
   assert.equal(x.geography.location,"rodas");
