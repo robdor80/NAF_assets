@@ -62,15 +62,23 @@
             </div>
 
             <div class="subsection">
-              <div class="field-title">¿Es una imagen nueva o una variante?</div>
+              <div class="field-title">¿Quieres recuperar una solicitud anterior?</div>
+              <div class="import-row">
+                <button id="loadBtn" type="button" class="btn btn-secondary import-btn"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 17v3h16v-3M12 17V4m0 0-4 4m4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Cargar solicitud .md</button>
+                <input type="file" id="loadFile" accept=".md,text/markdown,text/plain" class="file-input" aria-label="Seleccionar solicitud NAF en formato Markdown">
+                <small>Abre un .md creado por NAF, cambia lo que quieras y descárgalo de nuevo.</small>
+              </div>
+            </div>
+            <div class="subsection">
+              <div class="field-title">¿Qué quieres hacer con la imagen?</div>
               <div class="pill-switch" id="modeSelector" role="group" aria-label="Identidad del recurso">
                 <button type="button" class="is-active" data-mode="new" aria-pressed="true">Nueva imagen</button>
-                <button type="button" data-mode="variant" aria-pressed="false">Variante existente</button>
+                <button type="button" data-mode="variant" aria-pressed="false">Variar imagen NAP</button>
               </div>
               <div id="referenceWrap" class="field reference-wrap is-hidden">
                 <label for="referenceId">ID de referencia del recurso existente <span class="required">*</span></label>
                 <input id="referenceId" type="text" placeholder="scene_treskal_tavern_interior_001" autocomplete="off" spellcheck="false">
-                <small>Conservaremos la identidad visual y cambiaremos solo lo que indiques. La nueva imagen tendrá otro ID.</small>
+                <small>Introduce el ID de la <strong>imagen generada</strong> (por ejemplo, scene_valrik_aldea_001), no el nombre del .md. Para editar un .md utiliza «Cargar solicitud».</small>
               </div>
             </div>
           </section>
@@ -89,12 +97,13 @@
                 </select>
               </div>
               <div class="field">
-                <label for="place">Localización concreta</label>
+                <label for="place">Referencia geográfica</label>
                 <select id="place"></select>
+                <small id="placeHelp">Puedes generar imágenes genéricas sin asignar nombres. CoreRPG nombrará los asentamientos procedurales.</small>
               </div>
               <div class="field is-hidden" id="customPlaceWrap">
-                <label for="customPlace">Nombre de la localización <span class="required">*</span></label>
-                <input id="customPlace" type="text" placeholder="Nombre del lugar" autocomplete="off">
+                <label for="customPlace">Nombre del lugar concreto <span class="required">*</span></label>
+                <input id="customPlace" type="text" placeholder="Solo si ya existe un lugar con identidad propia" autocomplete="off">
               </div>
               <div class="field">
                 <label for="subject" id="subjectLabel">Lugar o entorno</label>
