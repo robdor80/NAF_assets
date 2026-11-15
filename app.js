@@ -126,6 +126,7 @@
     const role=$("subject").value==="other"?slug($("customSubject").value):roleMap[focusName()]||slug(focusName());
     const sex=$("portraitSex").value==="other"?slug($("customSex").value):$("portraitSex").value;
     if(!place||(portrait&&(!role||!sex)))throw Error("Hay identificadores que no pueden representarse en el formato NAP.");
+    if([place,house,...(portrait?[role,sex]:[])].some(x=>x.length>64))throw Error("Los identificadores de clasificación deben tener como máximo 64 caracteres (NAP).");
     const classification={culture:"norgard",realm:"norgard",region:house,location:place};
     if(portrait){classification.role=role;classification.sex=sex;}
     return {
