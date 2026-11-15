@@ -1,6 +1,6 @@
 # NAF assets — Nexus Asset Forge
 
-**NAF v0.1** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
+**NAF v0.2** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
 
 ## Actualización v0.2 — Nombres de CoreRPG y solicitudes reutilizables
 
