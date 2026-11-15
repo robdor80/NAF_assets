@@ -1,0 +1,19 @@
+{
+  "name": "NAF · Nexus Asset Forge",
+  "short_name": "NAF",
+  "description": "Solicitudes de recursos visuales Nimroel para NAP",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05131a",
+  "theme_color": "#05131a",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
