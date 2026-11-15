@@ -64,11 +64,17 @@
       span.textContent=name;l.append(check,span);return l;
     }));
   }
-  function placeName(){return $("place").value==="other"?$("customPlace").value.trim():$("place").value==="auto"?"Por decidir":label("place");}
+  function placeName(){
+    if($("place").value==="other")return $("customPlace").value.trim();
+    if($("place").value==="procedural")return "Sin nombre (CoreRPG)";
+    if($("place").value==="auto")return "Por decidir";
+    return label("place");
+  }
   function focusName(){return $("subject").value==="other"?$("customSubject").value.trim():label("subject");}
   function setHouse(want){
     const places=houses[$("house").value][1].map(x=>[slug(x),x]);
-    fill("place",[...places,["auto","Localidad por decidir"],["other","Otra localización…"]],want);
+    fill("place",[["procedural","Sin nombre · generado por CoreRPG"],...places,["other","Lugar concreto con nombre…"]],want);
+    if(want==="auto")$("place").value="procedural";
     renderBibles();sync();
   }
   function setKind(want,keep){
@@ -103,8 +109,7 @@
     const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual]};fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
-  function restore(){
-    let o=null;try{o=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
+  function restore(o){
     if(!o||!houses[o.house]){setKind("exterior");return;}
     $("house").value=o.house;setHouse(o.place);
     setKind(subjects[o.kind]?o.kind:"exterior",o.subject);
@@ -112,6 +117,86 @@
     if(o.mode==="variant")setMode("variant");
     $("manualBibles").checked=!!o.manualOn;manual=new Set(Array.isArray(o.manual)?o.manual.filter(x=>bib.some(b=>b[0]===x)):[]);
     renderBibles();sync();
+  }
+
+  // Importación exclusivamente de solicitudes NAF v1: no interpreta prompts ni paquetes de NAP.
+  function parseNAFMarkdown(text){
+    if(typeof text!=="string"||text.length>512000)throw Error("El archivo .md supera el límite de 500 KB.");
+    const match=text.match(/~~~json\s*\r?\n([\s\S]*?)\r?\n~~~/i);
+    if(!match)throw Error("No encuentro el bloque JSON de una solicitud NAF. Selecciona el .md descargado desde NAF.");
+    let data;
+    try{data=JSON.parse(match[1]);}catch(e){throw Error("El JSON de la solicitud NAF está dañado.");}
+    if(!data||data.naf_schema_version!==1||data.kind!=="solicitud_no_paquete_nap"||data.universe_id!=="nimroel"||
+       !["exterior","interior","portrait"].includes(data.category)||!houses[data.geography?.house]||
+       !data.focus||typeof data.focus.key!=="string"||!data.appearance||!data.nap_output)
+      throw Error("Solo pueden cargarse solicitudes .md válidas de NAF para Nimroel (versión 1).");
+    if(data.identity_mode==="variant" && !validId.test(data.reference_asset_id||""))
+      throw Error("El .md indica una variante, pero carece de un ID de imagen NAP válido.");
+    return data;
+  }
+  function selectByLabel(id,value){
+    if(typeof value!=="string")return;
+    const el=$(id);
+    const target=Array.from(el.options).find(o=>o.textContent===value);
+    if(target)el.value=target.value;
+  }
+  function applyNAFRequest(data){
+    // Validado antes de tocar el borrador visible. Los campos desconocidos no se ejecutan.
+    const geo=data.geography;
+    const house=geo.house;
+    const procedural=geo.procedural_template===true||
+      ["plantilla_generica_no_instanciada","pendiente_concretar"].includes(geo.canonical_status)||
+      geo.place_name==="Por decidir";
+    $("house").value=house;
+    const known=houses[house][1].some(x=>slug(x)===geo.location);
+    const geoChoice=procedural?"procedural":known?geo.location:"other";
+    setHouse(geoChoice);
+    $("customPlace").value=geoChoice==="other"?
+      String(geo.place_name||geo.location||"").slice(0,180):"";
+    const type=data.category;
+    const focusKey=data.focus.key;
+    const available=subjects[type].split("|").some(x=>slug(x)===focusKey);
+    setKind(type,available?focusKey:"other");
+    $("customSubject").value=available?"":String(data.focus.label||"").slice(0,180);
+    const info=data.appearance;
+    for(const [element,key] of Object.entries({
+      time:"time",weather:"weather",season:"season",scale:"scale",
+      population:"occupancy",camera:"camera"
+    }))selectByLabel(element,info[key]);
+    $("notes").value=String(data.free_description||"").slice(0,12000);
+    $("portraitAge").value=String(info.portrait_age||"").slice(0,80);
+    const portraitSex=String(info.portrait_sex||"");
+    if(type==="portrait"){
+      selectByLabel("portraitSex",portraitSex);
+      if(!["female","male"].includes($("portraitSex").value)){
+        if(portraitSex==="Femenino")$("portraitSex").value="female";
+        else if(portraitSex==="Masculino")$("portraitSex").value="male";
+        else if(portraitSex){$("portraitSex").value="other";$("customSex").value=portraitSex;}
+      }
+    }
+    $("preferredId").value=typeof data.asset_id_proposed==="string"?data.asset_id_proposed.slice(0,96):"";
+    $("referenceId").value=String(data.reference_asset_id||"").slice(0,180);
+    setMode(data.identity_mode==="variant"?"variant":"new");
+    const paths=Array.isArray(data.visual_bibles?.paths)?data.visual_bibles.paths:[];
+    manual=new Set(bib.filter(b=>paths.includes(root+b[2])).map(b=>b[0]));
+    $("manualBibles").checked=data.visual_bibles?.mode==="seleccion_manual_aditiva";
+    renderBibles();
+    sync(); // Actualiza resumen y guarda el borrador importado.
+  }
+  async function loadMDFile(file){
+    if(!file)return false;
+    try{
+      if(!/\.md$/i.test(file.name||""))throw Error("Selecciona un archivo con extensión .md.");
+      if(file.size>512000)throw Error("El archivo es demasiado grande (máximo 500 KB).");
+      const text=await file.text();
+      const data=parseNAFMarkdown(text);
+      applyNAFRequest(data);
+      status("Solicitud cargada: "+file.name+". Ya puedes editarla y descargar otro .md.",false);
+      return true;
+    }catch(e){
+      status(e.message||"No se ha podido cargar el archivo .md.",true);
+      return false;
+    }
   }
   function request(){
     const preferred=$("preferredId").value.trim(),ref=$("referenceId").value.trim(),portrait=kind==="portrait";
@@ -122,7 +207,10 @@
     if(mode==="variant"&&preferred===ref)throw Error("La variante debe tener un ID nuevo, diferente al de referencia.");
     if(portrait&&!$("portraitSex").value)throw Error("En Más opciones, selecciona el sexo del retrato.");
     if(portrait&&$("portraitSex").value==="other"&&!$("customSex").value.trim())throw Error("Describe el sexo o identificación del personaje.");
-    const house=$("house").value,place=$("place").value==="other"?slug($("customPlace").value):$("place").value==="auto"?house:$("place").value;
+    const house=$("house").value,procedural=$("place").value==="procedural"||$("place").value==="auto";
+    // NAP exige classification.location: en plantillas procedurales se usa el territorio real como
+    // contenedor de catálogo, nunca se inventa un nombre de aldea ni un ID de instancia CoreRPG.
+    const place=$("place").value==="other"?slug($("customPlace").value):procedural?house:$("place").value;
     const role=$("subject").value==="other"?slug($("customSubject").value):roleMap[focusName()]||slug(focusName());
     const sex=$("portraitSex").value==="other"?slug($("customSex").value):$("portraitSex").value;
     if(!place||(portrait&&(!role||!sex)))throw Error("Hay identificadores que no pueden representarse en el formato NAP.");
@@ -134,7 +222,8 @@
       asset_type:portrait?"portrait":"scene",production_profile:portrait?"portrait_npc":"scene_environment",
       category:kind,asset_id_proposed:preferred||null,identity_mode:mode,reference_asset_id:mode==="variant"?ref:null,
       geography:{realm:"Norgard",house,house_name:houses[house][0],location:place,place_name:placeName(),
-        canonical_status:house==="gldren"&&$("place").value==="halhhei"?"indicada_por_usuario_pendiente_verificacion":$("place").value==="auto"?"pendiente_concretar":"seleccionada"},
+        procedural_template:procedural,instance_id:null,naming_authority:procedural?"CoreRPG":"lore_o_autor",
+        canonical_status:procedural?"plantilla_generica_no_instanciada":house==="gldren"&&$("place").value==="halhhei"?"indicada_por_usuario_pendiente_verificacion":"seleccionada"},
       focus:{key:$("subject").value,label:focusName()},appearance:{
         time:label("time"),weather:label("weather"),season:label("season"),scale:label("scale"),
         occupancy:label("population"),camera:label("camera"),
@@ -153,7 +242,10 @@
     const lines=[
       "# NAF — Solicitud de "+title,"","> Solicitud para ChatGPT. NO es un ZIP ni un manifest listo para importar en NAP.","",
       "## Objetivo","",title+" · "+r.geography.house_name+" / "+r.geography.place_name+" · "+r.focus.label+".",
-      r.identity_mode==="variant"?"Crear una variante del recurso "+r.reference_asset_id+" con nuevo ID.":"Crear una imagen completamente nueva.","",
+      r.identity_mode==="variant"?"Crear una variante del recurso "+r.reference_asset_id+" con nuevo ID.":"Crear una imagen completamente nueva.",
+      ...(r.geography.procedural_template?[
+        "Esta imagen es una PLANTILLA VISUAL GENÉRICA DEL TERRITORIO: no tiene nombre de aldea, identificador de instancia ni plano definitivo. Solo CoreRPG decide qué asentamiento procedural existe, cómo se llama y cuándo puede emplearse esta imagen. NAP usa classification.location="+r.geography.location+" como agrupador territorial, no como nombre de aldea."
+      ]:[]),"",
       "## Descripción del autor","",r.free_description||"Sin más detalles: escoger una composición variada pero conforme al canon.","",
       "## Ambiente","",
       "- Hora: "+r.appearance.time,"- Meteorología: "+r.appearance.weather,"- Estación: "+r.appearance.season,
@@ -164,7 +256,7 @@
       "## Solicitud estructurada","",
       "~~~json",JSON.stringify(r,null,2),"~~~","",
       "## Obligaciones de producción para ChatGPT","",
-      "1. Verificar en GitHub las biblias indicadas, el canon del territorio y las referencias visuales aplicables. No inventar canon.",
+      "1. Verificar en GitHub las biblias indicadas, el canon del territorio y las referencias visuales aplicables. No inventar canon. En imágenes genéricas, nunca asignar un nombre ni un plano fijo al asentamiento procedural.",
       "2. Crear un prompt de generación completo y la imagen PNG maestra con proporción exacta y realismo cinematográfico naturalista.",
       "3. Si se pide variante, mantener los rasgos fijos del recurso de referencia; no reutilizar su asset_id.",
       "4. Taberna NO es posada: la primera no tiene habitaciones para huéspedes; la segunda sí puede ofrecer alojamiento.",
@@ -208,7 +300,7 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    setHouse("treskal");setKind("exterior");setMode("new");document.querySelector(".advanced").open=false;sync();
+    setHouse("procedural");setKind("exterior");setMode("new");document.querySelector(".advanced").open=false;sync();
   }
   document.querySelectorAll("[data-kind]").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
   document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
@@ -220,10 +312,19 @@
     renderBibles();sync();
   });
   fields.forEach(x=>$(x).addEventListener("input",sync));
+  $("loadBtn").addEventListener("click",()=>$("loadFile").click());
+  $("loadFile").addEventListener("change",async()=>{
+    const file=$("loadFile").files?.[0];
+    await loadMDFile(file);
+    $("loadFile").value="";
+  });
   $("downloadBtn").addEventListener("click",download);
   $("copyBtn").addEventListener("click",copy);
   $("resetBtn").addEventListener("click",reset);
-  setHouse("treskal");restore();
+  // Capturar el borrador ANTES de inicializar controles: su inicialización actualiza localStorage.
+  let savedDraft=null;
+  try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
+  setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,getState:()=>({kind,mode})};
+  window.NAF={markdown,request,parseNAFMarkdown,applyNAFRequest,loadMDFile,getState:()=>({kind,mode})};
 })();
