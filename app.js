@@ -269,7 +269,7 @@
       "## Contrato de referencia NAP","",
       "- robdor80/NAP/config/universes/nimroel/profile.json",
       "- robdor80/NAP/docs/MANIFEST_V2.md",
-      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.1."
+      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.2."
     ];
     return lines.join("\n")+"\n";
   }
