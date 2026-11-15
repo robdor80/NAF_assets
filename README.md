@@ -2,11 +2,19 @@
 
 **NAF v0.1** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
 
+## Actualización v0.2 — Nombres de CoreRPG y solicitudes reutilizables
+
+- **Localización procedural sin nombre (opción inicial):** no hay que bautizar aldeas, pueblos ni habitantes. CoreRPG decide nombre, identidad y distribución de cada instancia en el videojuego. El nombre propio solo se solicita cuando el autor elige expresamente «Lugar concreto con nombre».
+- Para imágenes genéricas, NAP sigue requiriendo `classification.location`: NAF usa **el ID del territorio** (ej. `valrik`) como contenedor de catálogo. Esto no crea una aldea llamada Valrik ni registra instancia de CoreRPG. El `.md` incluye `procedural_template: true`, `instance_id: null` y `naming_authority: "CoreRPG"`.
+- **Cargar solicitud .md:** botón en el bloque 01 para importar un encargo NAF anterior, recuperar sus campos, cambiar ambiente o escenario y guardar otro `.md`. Funciona sin conexión, con archivos del móvil y del PC, incluidos los `.md` de NAF v0.1. Acepta únicamente solicitudes NAF válidas, no cualquier Markdown ni ZIP.
+- **Variar imagen NAP:** opción independiente. Exige el ID real del recurso generado (por ejemplo `scene_valrik_aldea_approach_001`). **El nombre del archivo `naf_...md` NO es un asset_id**. Cargar el `.md` restaura la solicitud, pero no inventa el ID del PNG producido después.
+- El borrador en `localStorage` se restaura al abrir de nuevo la aplicación (corregida inicialización que lo sobrescribía).
+
 ## Qué hace
 
 1. Eliges **exterior**, **interior** o **retrato**.
-2. Decides si quieres crear una **imagen nueva** o una **variante** de un recurso existente (con ID de referencia).
-3. Seleccionas territorio (Valrik, Darovan, Gldren, Edranor, Aethros), localidad, tipo de lugar o profesión, hora, clima, estación y descripción libre.
+2. Decides si quieres crear una **imagen nueva** o una **variante de una imagen ya producida en NAP** (con ID real); también puedes **cargar una solicitud .md previa para editarla**, sin ID de imagen.
+3. Seleccionas territorio (Valrik, Darovan, Gldren, Edranor, Aethros), **localización sin nombre (por defecto, para material procedural)** o lugar concreto conocido, tipo de escenario o profesión, hora, clima, estación y descripción libre.
 4. Opcionalmente ajustas tamaño, ocupación, encuadre, edad, sexo, ID tentativo y biblias visuales. Las biblias básicas no se pueden quitar.
 5. Pulsas **Descargar solicitud .md** o **Copiar texto**. La solicitud conserva datos estructurados y referencias canónicas para entregarla a ChatGPT.
 
@@ -59,6 +67,6 @@ No hay llamadas de generación a ChatGPT desde esta web: la entrega del `.md` a 
 
 ## Alcance de la primera entrega
 
-Incluido: interfaz responsive, selección de categoría, identidad nueva/variante, territorios/localidades, listas de exteriores/interiores/oficios, parámetros de ambiente, campo libre, selección de biblias, persistencia del borrador, copia y descarga de `.md`.
+Incluido: interfaz responsive, selección de categoría, identidad nueva/variante, importación y edición de solicitudes `.md`, localización procedural sin nombre, territorios/localidades, listas de exteriores/interiores/oficios, parámetros de ambiente, campo libre, selección de biblias, persistencia corregida del borrador, copia y descarga de `.md`.
 
 Fuera de alcance por ahora: generación de imágenes en el navegador, creación automática del ZIP, conexión directa a SQLite, consultas automáticas a repositorios privados, sincronización entre dispositivos y certificado visual físico de los tres dispositivos.
