@@ -75,3 +75,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:390px){.brand-name{font-size:17px}.brand-subtitle{letter-spacing:.15em}.brand-icon{height:33px;width:33px}.btn-quiet{padding:7px 8px;font-size:10px}.kind-card{min-height:88px}.kind-card svg{width:32px;height:32px}.kind-card span{font-size:11px}}
 @media (orientation:landscape) and (max-height:560px) and (pointer:coarse) and (max-width:950px){.app{display:none!important}.orientation-block{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:var(--deep);color:var(--ice)}.orientation-symbol{font-size:70px;color:var(--teal);line-height:1}.orientation-block h1{margin:13px 0 5px;font-size:26px}.orientation-block p{font-size:13px;color:var(--muted);margin:0;max-width:330px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+
+/* NAF v0.2: importación local de solicitudes y localización sin nombre */
+.import-row{display:flex;align-items:center;flex-wrap:wrap;gap:11px 17px}
+.import-row .import-btn{font-size:12px;min-height:45px}
+.import-row .import-btn svg{height:18px;width:18px;flex:none}
+.import-row small{font-size:11px;color:var(--subtle);line-height:1.5;flex:1 1 250px}
+.file-input{display:none!important}
+#placeHelp{display:block;margin-top:1px}
+@media(max-width:699px){.import-row{flex-direction:column;align-items:stretch;gap:8px}.import-row .import-btn{width:100%}.import-row small{flex:auto}}
