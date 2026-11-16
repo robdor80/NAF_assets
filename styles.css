@@ -85,47 +85,43 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 #placeHelp{display:block;margin-top:1px}
 @media(max-width:699px){.import-row{flex-direction:column;align-items:stretch;gap:8px}.import-row .import-btn{width:100%}.import-row small{flex:auto}}
 
-/* NAF 0.3 — lotes y familias: formularios táctiles RobStyle */
-.batch-modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.batch-mode{border:1px solid var(--border);border-radius:12px;padding:12px 8px;min-height:77px;background:rgba(2,11,16,.28);color:var(--muted);display:flex;flex-direction:column;gap:4px;text-align:center;align-items:center;justify-content:center}
-.batch-mode strong{font-size:12px;color:var(--ice)}.batch-mode span{font-size:10px;line-height:1.4}
-.batch-mode.is-active{border-color:var(--teal);background:rgba(158,217,194,.12)}
-.batch-mode:hover{border-color:var(--border-strong);background:var(--panel-hover)}
-.batch-panel{margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
-.batch-guidance{font-size:12px;line-height:1.55;color:var(--muted);margin:16px 0}
-.batch-items-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 12px}
-.batch-items-head strong{font-size:13px}.btn-small{font-size:12px;min-height:37px;padding:7px 11px}
-.batch-items{display:flex;flex-direction:column;gap:11px}
-.batch-item{border:1px solid var(--border);border-radius:12px;padding:14px;background:rgba(2,11,16,.29)}
-.batch-item-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
-.batch-item-head strong{font-size:12px;color:var(--teal)}.batch-remove{border:1px solid var(--border);border-radius:8px;min-height:34px;padding:5px 10px;background:transparent;color:var(--muted);font-size:11px}
-.batch-remove:hover{background:var(--panel-hover);color:var(--ice)}.batch-remove:disabled{opacity:.3;cursor:not-allowed}
-.batch-item-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.batch-item-fields .batch-item-notes{grid-column:1/-1}
-.batch-item-fields .field label{font-size:11px}.batch-item-fields .field select,.batch-item-fields .field input{font-size:12px;min-height:44px;padding-top:9px;padding-bottom:9px}
-.batch-footnote{color:var(--subtle);font-size:11px;line-height:1.5;display:block;margin-top:15px}
-@media(max-width:699px){.batch-modes{gap:6px}.batch-mode{padding:10px 5px;min-height:90px}.batch-mode strong{font-size:11px}.batch-mode span{font-size:9px}.batch-item{padding:12px}.batch-item-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.batch-item-fields .batch-item-notes{grid-column:1/-1}.batch-items-head{gap:8px}.batch-items-head strong{font-size:12px}.btn-small{font-size:11px;white-space:normal}.batch-item-fields .field:nth-child(3){grid-column:1/-1}}
-@media(max-width:390px){.batch-mode{min-height:92px}.batch-mode strong{font-size:10px}.batch-mode span{font-size:9px}}
 
-.batch-source{margin:0 0 18px;padding:15px;border:1px solid var(--border);border-radius:12px;background:rgba(2,11,16,.25)}
-.batch-source .field-title{margin-bottom:11px}
-.batch-source .pill-switch{max-width:100%}
-.batch-source small{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:10px}
-@media(max-width:390px){.batch-source{padding:12px}.batch-source .pill-switch button{padding:7px 4px;font-size:11px}}
-
-/* NAF v0.4 — seguimiento de producción individual */
-.batch-tracker{border-top:1px solid var(--border);margin-top:14px;padding-top:14px;display:flex;flex-direction:column;gap:10px}
-.batch-tracker-fields{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:10px}
-.batch-tracker .field label{font-size:11px}
-.batch-tracker .field input,.batch-tracker .field select{min-width:0;width:100%;font-size:12px;min-height:43px}
-.batch-png-confirm{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.4;color:var(--muted);cursor:pointer}
-.batch-png-confirm input{width:18px;height:18px;flex:none;accent-color:var(--teal)}
-.batch-source>.batch-png-confirm{margin-top:13px}
-.batch-item-hint{font-size:11px;line-height:1.5;color:var(--muted);margin:0}
-.batch-item-actions{display:flex;flex-wrap:wrap;gap:8px}
-.batch-item-actions button{flex:1 1 145px;white-space:normal}
-.batch-item-actions button:disabled{cursor:not-allowed;opacity:.45}
-.batch-tracker-help{border:1px solid var(--border);border-radius:12px;background:rgba(2,11,16,.25);padding:15px;margin-top:17px}
-.batch-tracker-help strong{font-size:13px;color:var(--teal)}.batch-tracker-help p{font-size:11px;line-height:1.65;color:var(--muted);margin:7px 0 0}
-#batchProgress{font-weight:750}
-@media(max-width:699px){.batch-tracker-fields{grid-template-columns:1fr}.batch-tracker{margin-top:12px;padding-top:12px}.batch-item-actions{display:flex;flex-direction:column}.batch-item-actions button{flex:auto;width:100%}}
+/* NAF v0.5 — tres modos claros; lotes sencillos sin seguimiento */
+.workflow-modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.workflow-mode{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  min-height:91px;padding:13px 9px;border-radius:12px;border:1px solid var(--border);
+  background:rgba(2,11,16,.26);color:var(--muted);text-align:center}
+.workflow-mode strong{font-size:14px;color:var(--ice);line-height:1.25}
+.workflow-mode span{font-size:11px;line-height:1.35}
+.workflow-mode:hover{background:var(--panel-hover);border-color:var(--border-strong)}
+.workflow-mode.is-active{background:rgba(158,217,194,.12);border-color:var(--teal);
+  box-shadow:inset 0 0 0 1px rgba(158,217,194,.09)}
+.workflow-mode.is-active strong{color:var(--teal)}
+.reference-image-preview{width:100%;max-height:240px;object-fit:contain;background:var(--deep);
+  border:1px solid var(--border);border-radius:10px;margin-top:5px}
+.batch-guidance{color:var(--muted);font-size:12px;line-height:1.65;margin:14px 0}
+.btn-small{min-height:37px;padding:7px 11px;font-size:12px}
+.lot-type-switch{max-width:none;margin:0 0 19px}
+.lot-type-switch button{padding:8px 10px}
+.lot-fields{margin-top:10px}
+.lot-label-field{grid-column:1/-1}
+.lot-list-heading{color:var(--teal);font-size:12px;font-weight:760;margin:18px 0 12px}
+.simple-lot-items{display:flex;flex-direction:column;gap:9px}
+.simple-lot-item{display:flex;justify-content:space-between;align-items:center;gap:15px;
+  border:1px solid var(--border);border-radius:12px;background:rgba(2,11,16,.24);padding:13px}
+.lot-item-info{min-width:0;flex:1}
+.lot-item-info strong{display:block;font-size:12px;color:var(--teal);margin-bottom:4px}
+.lot-item-info p{font-size:11px;color:var(--muted);line-height:1.5;margin:0}
+.lot-item-actions{display:flex;gap:7px;flex:none}
+.batch-footnote{display:block;color:var(--subtle);font-size:11px;line-height:1.6;margin-top:14px}
+@media(max-width:699px){
+  .workflow-modes{gap:6px}
+  .workflow-mode{padding:11px 5px;min-height:91px}
+  .workflow-mode strong{font-size:12px}
+  .workflow-mode span{font-size:10px}
+  .simple-lot-item{flex-direction:column;align-items:stretch;padding:12px;gap:10px}
+  .lot-item-actions{width:100%}
+  .lot-item-actions button{flex:1;min-height:42px}
+  .lot-type-switch button{font-size:11px}
+}
+@media(max-width:390px){.workflow-mode strong{font-size:11px}.workflow-mode span{font-size:9px}}
