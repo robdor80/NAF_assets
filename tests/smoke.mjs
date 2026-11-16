@@ -40,10 +40,11 @@ function app(storageOverride) {
   const kinds=["exterior","interior","portrait"].map(id=>{const b=fakeElement(id);b.dataset.kind=id;return b;});
   const modes=["new","variant"].map(id=>{const b=fakeElement(id);b.dataset.mode=id;return b;});
   const batches=["single","variants","distinct"].map(id=>{const b=fakeElement(id);b.dataset.batch=id;return b;});
+  const sources=["new","existing"].map(id=>{const b=fakeElement(id);b.dataset.source=id;return b;});
   const advanced={open:false};
   const document={
     getElementById:id=>nodes[id],createElement:tag=>fakeElement(tag),
-    querySelectorAll:selector=>selector==="[data-kind]"?kinds:selector==="[data-mode]"?modes:batches,
+    querySelectorAll:selector=>selector==="[data-kind]"?kinds:selector==="[data-mode]"?modes:selector==="[data-batch]"?batches:sources,
     querySelector:()=>advanced,body:{appendChild(){}}
   };
   const storage=storageOverride||new Map();
@@ -56,7 +57,7 @@ function app(storageOverride) {
     setTimeout(){},confirm:()=>true,Date
   };
   vm.runInNewContext(js,context,{filename:"app.js"});
-  return {api:window.NAF,nodes,kinds,modes,batches,storage};
+  return {api:window.NAF,nodes,kinds,modes,batches,sources,storage};
 }
 test("interfaz, favicon y media queries para dispositivos",()=>{
   assert.match(html,/favicon\.svg/);
@@ -267,4 +268,36 @@ test("lote con ID nuevo propuesto se rechaza para evitar colisiones",()=>{
   a.nodes.preferredId.value="scene_valrik_tavern_001";
   a.batches[2].dispatch("click");
   assert.throws(()=>a.api.batchRequest(),/deja vacío/);
+});
+
+
+test("lote nuevo sin ID: imagen base primero, variantes pendientes hasta aprobación",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  assert.equal(a.api.getState().sourceMode,"new");
+  const data=a.api.batchRequest();
+  assert.equal(data.batch.source_mode,"new");
+  assert.equal(data.items[0].request.identity_mode,"new");
+  assert.equal(data.items[0].request.reference_asset_id,null);
+  assert.equal(data.items[1].request.identity_mode,"variant");
+  assert.equal(data.items[1].request.reference_asset_id,null);
+  assert.equal(data.items[1].request.visual_production.pending_reference_from_batch_position,1);
+  assert.equal(data.items[0].request.appearance.weather,"Despejado");
+  assert.match(a.api.markdown(),/SIN ID PREVIO/);
+});
+test("cambiar de base nueva a imagen con ID obliga a aportar ID real",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  a.sources[1].dispatch("click");
+  assert.equal(a.api.getState().sourceMode,"existing");
+  assert.throws(()=>a.api.batchRequest(),/ID de referencia/);
+  a.nodes.referenceId.value="scene_valrik_village_morning_001";
+  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,"scene_valrik_village_morning_001");
+  a.sources[0].dispatch("click");
+  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,null);
+});
+test("recuperar de .md lote que crea imagen base sin referencia previa",async()=>{
+  const a=app();a.batches[1].dispatch("click");const source=a.api.markdown();
+  const b=app();
+  assert.equal(await b.api.loadMDFile({name:"aldea_lote.md",size:source.length,text:async()=>source}),true);
+  assert.equal(b.api.getState().sourceMode,"new");
+  assert.equal(b.api.batchRequest().items[0].request.identity_mode,"new");
 });
