@@ -106,3 +106,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .batch-footnote{color:var(--subtle);font-size:11px;line-height:1.5;display:block;margin-top:15px}
 @media(max-width:699px){.batch-modes{gap:6px}.batch-mode{padding:10px 5px;min-height:90px}.batch-mode strong{font-size:11px}.batch-mode span{font-size:9px}.batch-item{padding:12px}.batch-item-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.batch-item-fields .batch-item-notes{grid-column:1/-1}.batch-items-head{gap:8px}.batch-items-head strong{font-size:12px}.btn-small{font-size:11px;white-space:normal}.batch-item-fields .field:nth-child(3){grid-column:1/-1}}
 @media(max-width:390px){.batch-mode{min-height:92px}.batch-mode strong{font-size:10px}.batch-mode span{font-size:9px}}
+
+.batch-source{margin:0 0 18px;padding:15px;border:1px solid var(--border);border-radius:12px;background:rgba(2,11,16,.25)}
+.batch-source .field-title{margin-bottom:11px}
+.batch-source .pill-switch{max-width:100%}
+.batch-source small{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:10px}
+@media(max-width:390px){.batch-source{padding:12px}.batch-source .pill-switch button{padding:7px 4px;font-size:11px}}
