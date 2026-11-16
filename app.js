@@ -31,7 +31,10 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
-  let batchMode="single",batchItems=[],batchId="",sourceMode="new";
+  let batchMode="single",lastActiveBatchMode="single",batchItems=[],batchId="",sourceMode="new",externalPngAvailable=false;
+  const progressStates=["pending","in_preparation","png_generated","approved","rejected","zip_delivered"];
+  const progressLabels={pending:"Pendiente",in_preparation:"En preparación",png_generated:"PNG generado",
+    approved:"Aprobada",rejected:"Descartada",zip_delivered:"ZIP entregado"};
   function slug(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
   function addOpt(v,t){const x=document.createElement("option");x.value=v;x.textContent=t;return x;}
   function fill(id,choices,preferred){$(id).replaceChildren(...choices.map(x=>addOpt(x[0],x[1])));if(choices.some(x=>x[0]===preferred))$(id).value=preferred;}
@@ -97,12 +100,14 @@
     $("customPlaceWrap").classList.toggle("is-hidden",$("place").value!=="other");
     $("customSubjectWrap").classList.toggle("is-hidden",$("subject").value!=="other");
     $("customSexWrap").classList.toggle("is-hidden",kind!=="portrait"||$("portraitSex").value!=="other");
+    $("referenceId").disabled=batchMode==="variants"&&sourceMode==="existing"&&
+      batchItems.some(x=>x.progress?.status!=="pending");
     $("summaryHouse").textContent=houses[$("house").value][0];
     $("summaryPlace").textContent=placeName()||"Pendiente";
     $("summarySubject").textContent=focusName()||"Pendiente";
     $("summaryMode").textContent=mode==="new"?"Nueva":"Variante";
     $("summaryBatch").textContent=batchMode==="single"?"1 imagen":batchItems.length+(batchMode==="variants"?" variantes":" imágenes distintas");
-    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Descargar lote .md";
+    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Guardar lote y seguimiento .md";
     $("summaryFormat").textContent=kind==="portrait"?"4:5 · 768 × 960":"16:9 · 1920 × 1080";
     $("previewType").textContent=kind==="portrait"?"RETRATO":kind==="interior"?"ESCENA INTERIOR":"ESCENA EXTERIOR";
     $("previewGlyph").textContent=kind==="portrait"?"◉":kind==="interior"?"▣":"◇";
@@ -110,7 +115,7 @@
   }
   function save(){
     const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual],
-      batchMode,sourceMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
+      batchMode,sourceMode,externalPngAvailable,batchItems:batchItems.map(i=>({...i,progress:{...i.progress}})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
     fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
@@ -126,6 +131,8 @@
     batchId=typeof o.batchId==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(o.batchId)?o.batchId:"";
     batchItems=Array.isArray(o.batchItems)?o.batchItems.slice(0,12).map(normalizeBatchItem):[];
     sourceMode=o.sourceMode==="existing"?"existing":"new";
+    externalPngAvailable=o.externalPngAvailable===true;
+    $("externalPngAvailable").checked=externalPngAvailable;
     setBatchMode(["variants","distinct"].includes(o.batchMode)?o.batchMode:"single",false);
     renderBibles();sync();
   }
@@ -168,6 +175,8 @@
       batchId=typeof data.batch.id==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(data.batch.id)?data.batch.id:"";
       batchItems=data.items.map(i=>normalizeBatchItem(i)).slice(0,12);
       sourceMode=data.batch.source_mode==="new"?"new":"existing";
+      externalPngAvailable=data.batch.external_png_available===true;
+      $("externalPngAvailable").checked=externalPngAvailable;
       setBatchMode(data.batch.mode,false);sync();
       return;
     }
@@ -246,12 +255,16 @@
   }
   function defaultBatchItem(index,kindOfBatch){
     return {weather:kindOfBatch==="variants"?(sourceMode==="new"?["despejado","lluvia_intensa","nieve"][index%3]:["lluvia_suave","lluvia_intensa","nieve"][index%3]):"auto",
-      time:"auto",season:"auto",notes:""};
+      time:"auto",season:"auto",notes:"",progress:{status:"pending",asset_id:"",png_available:false}};
   }
   function normalizeBatchItem(item){
     const pick=(id,v)=>Array.from($(id).options).some(o=>o.value===v)?v:"auto";
+    const progress=item?.progress||{};
     return {weather:pick("weather",item?.weather),time:pick("time",item?.time),
-      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):""};
+      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):"",
+      progress:{status:progressStates.includes(progress.status)?progress.status:"pending",
+        asset_id:typeof progress.asset_id==="string"?progress.asset_id.slice(0,96):"",
+        png_available:progress.png_available===true}};
   }
   function renderBatch(){
     document.querySelectorAll("[data-batch]").forEach(button=>{
@@ -262,6 +275,8 @@
     $("batchPanel").classList.toggle("is-hidden",batchMode==="single");
     $("familyWrap").classList.toggle("is-hidden",batchMode!=="variants");
     $("batchSourceWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    $("externalPngWrap").classList.toggle("is-hidden",!(batchMode==="variants"&&sourceMode==="existing"));
+    $("externalPngAvailable").checked=externalPngAvailable;
     document.querySelectorAll("[data-source]").forEach(button=>{
       const selected=button.dataset.source===sourceMode;
       button.classList.toggle("is-active",selected);button.setAttribute("aria-pressed",String(selected));
@@ -273,6 +288,9 @@
       (sourceMode==="new"?"La primera imagen creará la identidad de la aldea. Las restantes se generarán DESPUÉS de que apruebes la primera y exista su ID real.":"Todas partirán del ID de la imagen original que pegues. Se preservará su identidad visual.")+ " No conservar NPC trabajando al aire libre durante un temporal.":
       "Cada elemento representará un lugar o personaje INDEPENDIENTE. Evitaremos repetir la misma taberna o los mismos personajes.";
     $("batchCount").textContent=String(batchItems.length);
+    const complete=batchItems.filter(x=>x.progress?.status==="zip_delivered").length;
+    $("batchProgress").textContent=complete+" de "+batchItems.length+" con ZIP entregado; "+
+      batchItems.filter(x=>["approved","zip_delivered"].includes(x.progress?.status)).length+" aprobadas.";
     $("addBatchBtn").disabled=batchItems.length>=12;
     const container=$("batchItems");
     container.replaceChildren();
@@ -283,7 +301,9 @@
       const label=document.createElement("strong");
       label.textContent=(batchMode==="variants"&&sourceMode==="new"&&index===0?"Imagen base ":batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
       const remove=document.createElement("button");remove.type="button";
-      remove.className="batch-remove";remove.textContent="Quitar";remove.disabled=batchItems.length<=2;
+      remove.className="batch-remove";remove.textContent="Quitar";
+      remove.disabled=batchItems.length<=2||(batchMode==="variants"&&sourceMode==="new"&&index===0)||
+        ["approved","zip_delivered"].includes(item.progress.status);
       remove.addEventListener("click",()=>{
         if(batchItems.length<=2)return;
         batchItems.splice(index,1);renderBatch();sync();
@@ -305,17 +325,66 @@
       input.placeholder=batchMode==="variants"?"Ej.: camino inundado, nieve sobre los tejados":"Ej.: taberna pequeña, distinto mobiliario";
       input.addEventListener("input",()=>{item.notes=input.value;sync();});
       wrapper.append(fieldLabel,input);fields.append(wrapper);
-      card.append(heading,fields);container.append(card);
+      card.append(heading,fields);
+      const tracker=document.createElement("div");tracker.className="batch-tracker";
+      const trackerFields=document.createElement("div");trackerFields.className="batch-tracker-fields";
+      const statusField=document.createElement("div");statusField.className="field";
+      const statusLabel=document.createElement("label");statusLabel.textContent="Estado de producción";
+      const select=document.createElement("select");select.setAttribute("aria-label","Estado imagen "+(index+1));
+      select.replaceChildren(...progressStates.map(v=>addOpt(v,progressLabels[v])));
+      select.value=item.progress.status;
+      select.addEventListener("change",()=>{
+        if(!setItemStatus(index,select.value)){select.value=item.progress.status;return;}
+        renderBatch();sync();
+      });
+      statusField.append(statusLabel,select);
+      const idField=document.createElement("div");idField.className="field";
+      const idLabel=document.createElement("label");idLabel.textContent="ID definitivo tras aprobación";
+      const id=document.createElement("input");id.type="text";id.maxLength=96;
+      id.setAttribute("aria-label","ID definitivo imagen "+(index+1));
+      id.placeholder="Pega el ID entregado por ChatGPT";id.value=item.progress.asset_id;
+      id.disabled=batchMode==="variants"&&sourceMode==="new"&&index===0&&
+        batchItems.slice(1).some(x=>x.progress.status!=="pending");
+      id.addEventListener("input",()=>{if(setItemAssetId(index,id.value))sync();});
+      id.addEventListener("change",()=>{renderBatch();sync();});
+      idField.append(idLabel,id);trackerFields.append(statusField,idField);
+      const png=document.createElement("label");png.className="batch-png-confirm";
+      const pngCheck=document.createElement("input");pngCheck.type="checkbox";
+      pngCheck.setAttribute("aria-label","PNG disponible imagen "+(index+1));
+      pngCheck.checked=item.progress.png_available;
+      pngCheck.addEventListener("change",()=>{setItemPngAvailable(index,pngCheck.checked);renderBatch();sync();});
+      const pngText=document.createElement("span");pngText.textContent="PNG disponible para ChatGPT";
+      png.append(pngCheck,pngText);
+      const hint=document.createElement("p");hint.className="batch-item-hint";
+      const readiness=itemReadiness(index);hint.textContent=readiness.why;
+      const actions=document.createElement("div");actions.className="batch-item-actions";
+      const downloadOne=document.createElement("button");downloadOne.type="button";
+      downloadOne.className="btn btn-secondary btn-small";downloadOne.textContent="Descargar esta imagen .md";
+      const copyOne=document.createElement("button");copyOne.type="button";
+      copyOne.className="btn btn-quiet btn-small";copyOne.textContent="Copiar solicitud";
+      downloadOne.disabled=copyOne.disabled=!readiness.ok;
+      downloadOne.addEventListener("click",()=>downloadBatchItem(index));
+      copyOne.addEventListener("click",()=>copyBatchItem(index));
+      actions.append(downloadOne,copyOne);tracker.append(trackerFields,png,hint,actions);
+      card.append(tracker);container.append(card);
     });
   }
   function setBatchMode(value,resetItems=true){
     const chosen=["variants","distinct"].includes(value)?value:"single";
-    const changed=chosen!==batchMode;batchMode=chosen;
-    if(changed&&batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
+    const typeChanged=chosen!=="single"&&lastActiveBatchMode!=="single"&&chosen!==lastActiveBatchMode;
+    if(typeChanged&&resetItems&&batchItems.some(x=>x.progress?.status!=="pending")&&
+       !confirm("Cambiar el tipo de lote reiniciará el seguimiento actual. ¿Continuar?"))return;
+    batchMode=chosen;
     if(batchMode!=="single"){
+      if(typeChanged&&resetItems){
+        batchItems=[];batchId=newBatchId();externalPngAvailable=false;
+      }
       if(!batchId)batchId=newBatchId();
-      if(resetItems&&changed||batchItems.length<2)
+      if(batchItems.length<2){
+        if(batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
         batchItems=[0,1,2].map(i=>defaultBatchItem(i,batchMode));
+      }
+      lastActiveBatchMode=batchMode;
       setMode(batchMode==="variants"&&sourceMode==="existing"?"variant":"new");
     }
     document.querySelectorAll("[data-mode]").forEach(button=>{
@@ -327,7 +396,13 @@
   function setSourceMode(value){
     if(batchMode!=="variants")return;
     const previous=sourceMode;
-    sourceMode=value==="existing"?"existing":"new";
+    const chosen=value==="existing"?"existing":"new";
+    if(chosen===previous)return;
+    const started=batchItems.some(x=>x.progress?.status!=="pending");
+    if(started&&!confirm("Cambiar la imagen base reiniciará el seguimiento de este lote. ¿Continuar?"))return;
+    sourceMode=chosen;
+    if(started)batchItems=batchItems.map(item=>({...item,progress:{status:"pending",asset_id:"",png_available:false}}));
+    externalPngAvailable=false;
     const defaults={new:["despejado","lluvia_intensa","nieve"],existing:["lluvia_suave","lluvia_intensa","nieve"]};
     batchItems=batchItems.map((item,i)=>{
       const untouched=item.weather===defaults[previous][i%3]&&item.time==="auto"&&item.season==="auto"&&!item.notes;
@@ -341,6 +416,160 @@
   function addBatchItem(){
     if(batchMode==="single"||batchItems.length>=12)return;
     batchItems.push(defaultBatchItem(batchItems.length,batchMode));renderBatch();sync();
+  }
+
+  function setItemAssetId(index,value){
+    const item=batchItems[index];
+    if(!item||typeof value!=="string"||value.length>96)return false;
+    if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
+       batchItems.slice(1).some(x=>x.progress.status!=="pending"))return false;
+    item.progress.asset_id=value.trim();save();
+    return true;
+  }
+  function setItemPngAvailable(index,available){
+    const item=batchItems[index];if(!item)return false;
+    item.progress.png_available=available===true;save();return true;
+  }
+  function setItemStatus(index,value){
+    const item=batchItems[index];
+    if(!item||!progressStates.includes(value))return false;
+    if(!["pending","rejected"].includes(value)&&batchMode==="variants"){
+      const sourceReady=sourceMode==="existing"?
+        validId.test($("referenceId").value.trim())&&externalPngAvailable:
+        index===0||(["approved","zip_delivered"].includes(batchItems[0].progress.status)&&
+          validId.test(batchItems[0].progress.asset_id)&&batchItems[0].progress.png_available);
+      if(!sourceReady){
+        status("Esta variante todavía está bloqueada: falta el ID y PNG de la imagen base aprobada.",true);
+        return false;
+      }
+    }
+    if(value==="approved"&&!item.progress.png_available){
+      status("Marca primero que el PNG de esta imagen está disponible.",true);return false;
+    }
+    const approvedId=item.progress.asset_id;
+    const validProductionId=validId.test(approvedId)&&approvedId.length<=96&&
+      approvedId.startsWith(kind==="portrait"?"portrait_":"scene_")&&
+      !batchItems.some((other,j)=>j!==index&&other.progress.asset_id===approvedId)&&
+      !(batchMode==="variants"&&sourceMode==="existing"&&approvedId===$("referenceId").value.trim());
+    if(value==="zip_delivered"&&!(["approved","zip_delivered"].includes(item.progress.status)&&
+        item.progress.png_available&&validProductionId)){
+      status("Antes del ZIP: aprueba el PNG y pega un ID definitivo válido, único y diferente de la referencia.",true);return false;
+    }
+    if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
+       !["approved","zip_delivered"].includes(value)&&
+       batchItems.slice(1).some(x=>x.progress.status!=="pending")){
+      status("La base ya tiene variantes iniciadas. No puedes retirar su aprobación mientras existan.",true);
+      return false;
+    }
+    item.progress.status=value;
+    save();
+    return true;
+  }
+  function itemReadiness(index){
+    if(batchMode==="single"||index<0||index>=batchItems.length)return {ok:false,why:"No existe esta imagen."};
+    const item=batchItems[index],p=item.progress;
+    if(p.status==="rejected")return {ok:false,why:"Esta imagen está descartada."};
+    if(p.status==="zip_delivered")return {ok:false,why:"ZIP entregado. No se generará de nuevo por accidente."};
+    if(p.status==="approved")return {ok:false,why:"PNG aprobado: guarda su ID definitivo y marca «ZIP entregado» cuando lo recibas."};
+    if(batchMode==="variants"&&sourceMode==="existing"){
+      if(!validId.test($("referenceId").value.trim()))return {ok:false,why:"Pega primero el ID de referencia en el bloque 01."};
+      if(!externalPngAvailable)return {ok:false,why:"Confirma que dispones del PNG original para ChatGPT."};
+    }
+    if(batchMode==="variants"&&sourceMode==="new"&&index>0){
+      const base=batchItems[0]?.progress;
+      if(!base||!["approved","zip_delivered"].includes(base.status)||
+         !validId.test(base.asset_id)||!base.png_available)
+        return {ok:false,why:"Bloqueada: aprueba el PNG base, pega su ID definitivo y confirma que está disponible."};
+    }
+    return {ok:true,why:"Lista para descargar y enviar a ChatGPT."};
+  }
+  function individualRequest(index){
+    const check=itemReadiness(index);
+    if(!check.ok)throw Error(check.why);
+    const batch=batchRequest(),item=batch.items[index];
+    if(!item)throw Error("La imagen no existe.");
+    const req=item.request;
+    req.visual_production.batch_position=index+1;
+    req.visual_production.batch_total=batch.items.length;
+    req.visual_production.batch_mode=batchMode;
+    req.visual_production.batch_title=batch.batch.title;
+    req.visual_production.production_progress={...item.progress};
+    req.visual_production.must_generate_one_image_only=true;
+    if(batchMode==="variants"){
+      const baseRef=sourceMode==="new"?batchItems[0].progress.asset_id.trim():$("referenceId").value.trim();
+      if(index===0&&sourceMode==="new"){
+        req.identity_mode="new";req.reference_asset_id=null;
+        req.visual_production.pending_reference_from_batch_position=null;
+        req.visual_production.original_png_required=false;
+      }else{
+        req.identity_mode="variant";
+        req.reference_asset_id=baseRef;
+        req.visual_production.reference_asset_id=baseRef;
+        req.visual_production.pending_reference_from_batch_position=null;
+        req.visual_production.original_png_required=true;
+      }
+    }
+    return req;
+  }
+  function individualMarkdown(index){
+    const req=individualRequest(index),m=req.visual_production;
+    return [
+      "# NAF — Encargo individual "+String(index+1).padStart(2,"0")+" / "+batchItems.length,"",
+      "> Esta solicitud contiene UNA SOLA imagen del lote "+batchId+". No generar el resto del lote.","",
+      "## Identidad y dependencias","",
+      "- Lote: "+m.batch_title,
+      "- Lote ID: "+m.batch_id,
+      "- Familia: "+m.visual_family_id,
+      "- Identidad: "+(req.identity_mode==="variant"?"VARIANTE de "+req.reference_asset_id:"NUEVA imagen independiente"),
+      "- PNG original: "+(req.identity_mode==="variant"?"Necesario; debe estar accesible o adjuntarse":"No necesario"),"",
+      "## Imagen solicitada","",
+      "- Universo: Nimroel RPG",
+      "- Territorio: "+req.geography.house_name,
+      "- Lugar: "+req.geography.place_name,
+      "- Escenario: "+req.focus.label,
+      "- Clima: "+req.appearance.weather,
+      "- Hora: "+req.appearance.time,
+      "- Estación: "+req.appearance.season,
+      "- Descripción: "+(req.free_description||"Aplicar el canon y la diversidad visual."),"",
+      "## Coherencia causal","",req.visual_production.activity_coherence,"",
+      "## Fuentes a consultar","",...req.visual_bibles.paths.map(x=>"- "+x),"",
+      "## Entrega y aprobación","",
+      "1. Crear solo este PNG, verificando las biblias del repositorio Nimroel y su coherencia visual.",
+      "2. Mostrarlo al autor y esperar su decisión. Si lo rechaza, corregir esta imagen, sin crear ZIP.",
+      "3. Tras aprobación expresa, asignar y ofrecer para copiar un asset_id exclusivo, conforme a NAP Naming v1 y a la comprobación de colisiones disponible.",
+      "4. Solo después crear un ZIP individual de cinco archivos planos: PNG, manifest v2, prompt.md, info.md y visual_identity.json.",
+      "5. En visual_identity.json conservar batch_id, visual_family_id, posición y referencia original; NO añadirlos al manifest v2 de seis campos.",
+      "6. NAP clasificará usando culture y location del manifest y convertirá el PNG a WebP. No crear paquetes ni ZIP del lote completo.","",
+      "## Solicitud estructurada","",
+      "~~~json",JSON.stringify(req,null,2),"~~~","",
+      "Generado con NAF v0.4."
+    ].join("\n")+"\n";
+  }
+  function downloadText(text,fileName){
+    const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download=fileName;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }
+  async function copyText(text){
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+    else{
+      const node=document.createElement("textarea");node.value=text;
+      document.body.appendChild(node);node.select();
+      if(!document.execCommand("copy"))throw Error("Este navegador no permite copiar.");
+      node.remove();
+    }
+  }
+  function downloadBatchItem(index){
+    try{
+      const content=individualMarkdown(index);
+      const name=batchId+"_imagen_"+String(index+1).padStart(2,"0")+".md";
+      downloadText(content,name);status("Solicitud individual "+(index+1)+" descargada. El resto del lote no se ha enviado.",false);
+    }catch(e){status(e.message||"No puede descargarse esta imagen.",true);}
+  }
+  async function copyBatchItem(index){
+    try{await copyText(individualMarkdown(index));status("Solicitud individual "+(index+1)+" copiada.",false);}
+    catch(e){status(e.message||"No se ha podido copiar.",true);}
   }
   function batchRequest(){
     if(batchMode==="single")throw Error("Selecciona «Misma escena» o «Imágenes distintas».");
@@ -363,7 +592,7 @@
       task.reference_asset_id=isVariant&&sourceMode==="existing"?base.reference_asset_id:null;
       task.asset_id_proposed=null;
       task.visual_production={
-        batch_id:batchId,visual_family_id:isVariant?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
+        batch_id:batchId,visual_family_id:batchMode==="variants"?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
         same_visual_identity:isVariant,reference_asset_id:task.reference_asset_id,
         pending_reference_from_batch_position:isVariant&&sourceMode==="new"?1:null,
         original_png_required:isVariant,
@@ -371,11 +600,11 @@
         activity_coherence:activityRule(kind,item.weather==="auto"?$("weather").value:item.weather,
           item.time==="auto"?$("time").value:item.time)
       };
-      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,request:task};
+      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,progress:{...item.progress},request:task};
     });
     return {naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
       batch:{id:batchId,title,mode:batchMode,source_mode:batchMode==="variants"?sourceMode:null,family_label:$("familyName").value.trim(),
-        visual_family_id:familyId,item_count:images.length,
+        visual_family_id:familyId,item_count:images.length,external_png_available:batchMode==="variants"&&sourceMode==="existing"?externalPngAvailable:false,
         approval_policy:"individual_png_review_before_id_and_zip"},
       base,items:images,
       nap_delivery:{one_zip_per_approved_image:true,zip_flat_five_files:true,
@@ -391,7 +620,8 @@
       "- Estación: "+item.request.appearance.season,
       "- Detalles: "+(item.notes||"Lo indicado en las biblias y la solicitud común"),
       "- Continuidad: "+(item.request.visual_production.same_visual_identity?"MISMO escenario que el PNG original":"NUEVA identidad, distinta de las otras"),
-      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,""
+      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,
+      "- Seguimiento: "+progressLabels[item.progress.status]+"; ID: "+(item.progress.asset_id||"pendiente")+"; PNG: "+(item.progress.png_available?"disponible":"no confirmado"),""
     ]);
     return [
       "# NAF — Lote: "+data.batch.title,"",
@@ -413,7 +643,7 @@
       "- robdor80/NAP/config/universes/nimroel/profile.json",
       "- robdor80/NAP/docs/MANIFEST_V2.md",
       "- robdor80/NAP/docs/NAMING_V1.md","",
-      "Generado con NAF v0.3."
+      "Generado con NAF v0.4."
     ].join("\n")+"\n";
   }
 
@@ -497,7 +727,7 @@
       "## Contrato de referencia NAP","",
       "- robdor80/NAP/config/universes/nimroel/profile.json",
       "- robdor80/NAP/docs/MANIFEST_V2.md",
-      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.2."
+      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.4."
     ];
     return lines.join("\n")+"\n";
   }
@@ -529,7 +759,7 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    batchMode="single";sourceMode="new";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    batchMode="single";lastActiveBatchMode="single";sourceMode="new";externalPngAvailable=false;batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
     setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
     document.querySelector(".advanced").open=false;sync();
   }
@@ -552,6 +782,10 @@
   document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
   document.querySelectorAll("[data-source]").forEach(b=>b.addEventListener("click",()=>setSourceMode(b.dataset.source)));
   $("addBatchBtn").addEventListener("click",addBatchItem);
+  $("referenceId").addEventListener("change",()=>{renderBatch();sync();});
+  $("externalPngAvailable").addEventListener("change",()=>{
+    externalPngAvailable=$("externalPngAvailable").checked;renderBatch();sync();
+  });
   $("batchTitle").addEventListener("input",sync);
   $("familyName").addEventListener("input",sync);
   $("downloadBtn").addEventListener("click",download);
@@ -562,6 +796,6 @@
   try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,batchRequest,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+  window.NAF={markdown,request,batchRequest,individualRequest,individualMarkdown,setItemStatus,setItemAssetId,setItemPngAvailable,itemReadiness,parseNAFMarkdown,applyNAFRequest,loadMDFile,
     setBatchMode,setSourceMode,activityRule,getState:()=>({kind,mode,batchMode,sourceMode,batchCount:batchItems.length})};
 })();
