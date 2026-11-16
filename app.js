@@ -361,6 +361,133 @@
     if(batchMode==="single"||batchItems.length>=12)return;
     batchItems.push(defaultBatchItem(batchItems.length,batchMode));renderBatch();sync();
   }
+
+  function setItemStatus(index,value){
+    const item=batchItems[index];
+    if(!item||!progressStates.includes(value))return false;
+    if(value==="approved"&&!item.progress.png_available){
+      status("Marca primero que el PNG de esta imagen está disponible.",true);return false;
+    }
+    if(value==="zip_delivered"&&!(["approved","zip_delivered"].includes(item.progress.status)&&
+        item.progress.png_available&&validId.test(item.progress.asset_id))){
+      status("Antes del ZIP: aprueba el PNG y pega el ID definitivo válido.",true);return false;
+    }
+    if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
+       !["approved","zip_delivered"].includes(value)&&
+       batchItems.slice(1).some(x=>x.progress.status!=="pending")){
+      status("La base ya tiene variantes iniciadas. No puedes retirar su aprobación mientras existan.",true);
+      return false;
+    }
+    item.progress.status=value;
+    save();
+    return true;
+  }
+  function itemReadiness(index){
+    if(batchMode==="single"||index<0||index>=batchItems.length)return {ok:false,why:"No existe esta imagen."};
+    const item=batchItems[index],p=item.progress;
+    if(p.status==="rejected")return {ok:false,why:"Esta imagen está descartada."};
+    if(p.status==="zip_delivered")return {ok:false,why:"Ya tiene su ZIP entregado; cambia el estado para repetir el encargo."};
+    if(["approved"].includes(p.status))return {ok:false,why:"Esta imagen ya está aprobada. Solo falta su ID o la entrega del ZIP."};
+    if(batchMode==="variants"&&sourceMode==="existing"){
+      if(!validId.test($("referenceId").value.trim()))return {ok:false,why:"Pega primero el ID de referencia en el bloque 01."};
+      if(!externalPngAvailable)return {ok:false,why:"Confirma que dispones del PNG original para ChatGPT."};
+    }
+    if(batchMode==="variants"&&sourceMode==="new"&&index>0){
+      const base=batchItems[0]?.progress;
+      if(!base||!["approved","zip_delivered"].includes(base.status)||
+         !validId.test(base.asset_id)||!base.png_available)
+        return {ok:false,why:"Bloqueada: aprueba el PNG base, pega su ID definitivo y confirma que está disponible."};
+    }
+    return {ok:true,why:"Lista para descargar y enviar a ChatGPT."};
+  }
+  function individualRequest(index){
+    const check=itemReadiness(index);
+    if(!check.ok)throw Error(check.why);
+    const batch=batchRequest(),item=batch.items[index];
+    if(!item)throw Error("La imagen no existe.");
+    const req=item.request;
+    req.visual_production.batch_position=index+1;
+    req.visual_production.batch_total=batch.items.length;
+    req.visual_production.batch_mode=batchMode;
+    req.visual_production.batch_title=batch.batch.title;
+    req.visual_production.production_progress={...item.progress};
+    req.visual_production.must_generate_one_image_only=true;
+    if(batchMode==="variants"){
+      const baseRef=sourceMode==="new"?batchItems[0].progress.asset_id.trim():$("referenceId").value.trim();
+      if(index===0&&sourceMode==="new"){
+        req.identity_mode="new";req.reference_asset_id=null;
+        req.visual_production.pending_reference_from_batch_position=null;
+        req.visual_production.original_png_required=false;
+      }else{
+        req.identity_mode="variant";
+        req.reference_asset_id=baseRef;
+        req.visual_production.reference_asset_id=baseRef;
+        req.visual_production.pending_reference_from_batch_position=null;
+        req.visual_production.original_png_required=true;
+      }
+    }
+    return req;
+  }
+  function individualMarkdown(index){
+    const req=individualRequest(index),m=req.visual_production;
+    return [
+      "# NAF — Encargo individual "+String(index+1).padStart(2,"0")+" / "+batchItems.length,"",
+      "> Esta solicitud contiene UNA SOLA imagen del lote "+batchId+". No generar el resto del lote.","",
+      "## Identidad y dependencias","",
+      "- Lote: "+m.batch_title,
+      "- Lote ID: "+m.batch_id,
+      "- Familia: "+m.visual_family_id,
+      "- Identidad: "+(req.identity_mode==="variant"?"VARIANTE de "+req.reference_asset_id:"NUEVA imagen independiente"),
+      "- PNG original: "+(req.identity_mode==="variant"?"Necesario; debe estar accesible o adjuntarse":"No necesario"),"",
+      "## Imagen solicitada","",
+      "- Universo: Nimroel RPG",
+      "- Territorio: "+req.geography.house_name,
+      "- Lugar: "+req.geography.place_name,
+      "- Escenario: "+req.focus.label,
+      "- Clima: "+req.appearance.weather,
+      "- Hora: "+req.appearance.time,
+      "- Estación: "+req.appearance.season,
+      "- Descripción: "+(req.free_description||"Aplicar el canon y la diversidad visual."),"",
+      "## Coherencia causal","",req.visual_production.activity_coherence,"",
+      "## Fuentes a consultar","",...req.visual_bibles.paths.map(x=>"- "+x),"",
+      "## Entrega y aprobación","",
+      "1. Crear solo este PNG, verificando las biblias del repositorio Nimroel y su coherencia visual.",
+      "2. Mostrarlo al autor y esperar su decisión. Si lo rechaza, corregir esta imagen, sin crear ZIP.",
+      "3. Tras aprobación expresa, asignar y ofrecer para copiar un asset_id exclusivo, conforme a NAP Naming v1 y a la comprobación de colisiones disponible.",
+      "4. Solo después crear un ZIP individual de cinco archivos planos: PNG, manifest v2, prompt.md, info.md y visual_identity.json.",
+      "5. En visual_identity.json conservar batch_id, visual_family_id, posición y referencia original; NO añadirlos al manifest v2 de seis campos.",
+      "6. NAP clasificará usando culture y location del manifest y convertirá el PNG a WebP. No crear paquetes ni ZIP del lote completo.","",
+      "## Solicitud estructurada","",
+      "~~~json",JSON.stringify(req,null,2),"~~~","",
+      "Generado con NAF v0.4."
+    ].join("\n")+"\n";
+  }
+  function downloadText(text,fileName){
+    const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download=fileName;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }
+  async function copyText(text){
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+    else{
+      const node=document.createElement("textarea");node.value=text;
+      document.body.appendChild(node);node.select();
+      if(!document.execCommand("copy"))throw Error("Este navegador no permite copiar.");
+      node.remove();
+    }
+  }
+  function downloadBatchItem(index){
+    try{
+      const content=individualMarkdown(index);
+      const name=batchId+"_imagen_"+String(index+1).padStart(2,"0")+".md";
+      downloadText(content,name);status("Solicitud individual "+(index+1)+" descargada. El resto del lote no se ha enviado.",false);
+    }catch(e){status(e.message||"No puede descargarse esta imagen.",true);}
+  }
+  async function copyBatchItem(index){
+    try{await copyText(individualMarkdown(index));status("Solicitud individual "+(index+1)+" copiada.",false);}
+    catch(e){status(e.message||"No se ha podido copiar.",true);}
+  }
   function batchRequest(){
     if(batchMode==="single")throw Error("Selecciona «Misma escena» o «Imágenes distintas».");
     if(batchItems.length<2||batchItems.length>12)throw Error("Un lote admite entre 2 y 12 imágenes.");
@@ -585,6 +712,6 @@
   try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,batchRequest,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+  window.NAF={markdown,request,batchRequest,individualRequest,individualMarkdown,setItemStatus,itemReadiness,parseNAFMarkdown,applyNAFRequest,loadMDFile,
     setBatchMode,setSourceMode,activityRule,getState:()=>({kind,mode,batchMode,sourceMode,batchCount:batchItems.length})};
 })();
