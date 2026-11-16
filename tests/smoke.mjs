@@ -3,472 +3,260 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const js = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const html=readFileSync(new URL("../index.html",import.meta.url),"utf8");
+const js=readFileSync(new URL("../app.js",import.meta.url),"utf8");
+const css=readFileSync(new URL("../styles.css",import.meta.url),"utf8");
 
-function fakeElement(id) {
-  const handlers = {};
-  const element = {
-    id, value:"", textContent:"", checked:false, disabled:false, dataset:{},
-    options:[], children:[], style:{},
-    classList:{ toggle(){}, remove(){}, add(){} },
-    setAttribute(){}, addEventListener(event,fn){handlers[event]=fn;},
+function fakeElement(id){
+  const handlers={};
+  return {
+    id,value:"",textContent:"",checked:false,disabled:false,src:"",
+    dataset:{},options:[],children:[],files:[],style:{},
+    classList:{toggle(){},add(){},remove(){}},
+    setAttribute(){},addEventListener(event,fn){handlers[event]=fn;},
     dispatch(event){handlers[event]?.();},
-    append(...x){this.children.push(...x);},
-    replaceChildren(...x){
-      this.children=x;this.options=x;
-      if(["place","subject"].includes(id))this.value=x[0]?.value||"";
-    },
-    remove(){}, scrollIntoView(){}, click(){}
+    append(...nodes){this.children.push(...nodes);},
+    replaceChildren(...nodes){this.children=nodes;this.options=nodes;if(["place","subject"].includes(id))this.value=nodes[0]?.value||"";},
+    remove(){},click(){this.dispatch("click");},select(){},
+    get selectedOptions(){return this.options.filter(item=>item.value===this.value);}
   };
-  Object.defineProperty(element,"selectedOptions",{get(){
-    return element.options.filter(option=>option.value===element.value);
-  }});
-  return element;
 }
-function app(storageOverride) {
-  const ids=[...new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(x=>x[1]))];
+class MockBlob{
+  constructor(parts,options={}){this.parts=parts;this.type=options.type||"";}
+}
+function app(storageOverride){
+  const ids=[...new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m=>m[1]))];
   const nodes=Object.fromEntries(ids.map(id=>[id,fakeElement(id)]));
-  // En un navegador, las opciones ya están presentes en el HTML antes de cargar app.js.
-  for(const m of html.matchAll(/<select id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)){
-    const list=[...m[2].matchAll(/<option(?: value="([^"]*)")?[^>]*>([\s\S]*?)<\/option>/g)];
-    nodes[m[1]].options=list.map(x=>({value:x[1]??x[2],textContent:x[2]}));
-    nodes[m[1]].value=nodes[m[1]].options[0]?.value||"";
+  for(const match of html.matchAll(/<select id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)){
+    const opts=[...match[2].matchAll(/<option(?: value="([^"]*)")?([^>]*)>([\s\S]*?)<\/option>/g)];
+    nodes[match[1]].options=opts.map(m=>({value:m[1]??m[3],textContent:m[3]}));
+    const selected=opts.find(m=>/\bselected\b/.test(m[2]));
+    nodes[match[1]].value=(selected?.[1]||nodes[match[1]].options[0]?.value)||"";
   }
   nodes.house.value="valrik";
   const kinds=["exterior","interior","portrait"].map(id=>{const b=fakeElement(id);b.dataset.kind=id;return b;});
-  const modes=["new","variant"].map(id=>{const b=fakeElement(id);b.dataset.mode=id;return b;});
-  const batches=["single","variants","distinct"].map(id=>{const b=fakeElement(id);b.dataset.batch=id;return b;});
-  const sources=["new","existing"].map(id=>{const b=fakeElement(id);b.dataset.source=id;return b;});
+  const workflows=["single","variant","lot"].map(id=>{const b=fakeElement(id);b.dataset.workflow=id;return b;});
+  const lotTypes=["independent","views"].map(id=>{const b=fakeElement(id);b.dataset.lotType=id;return b;});
   const advanced={open:false};
   const document={
-    getElementById:id=>nodes[id],createElement:tag=>fakeElement(tag),
-    querySelectorAll:selector=>selector==="[data-kind]"?kinds:selector==="[data-mode]"?modes:selector==="[data-batch]"?batches:sources,
-    querySelector:()=>advanced,body:{appendChild(){}}
+    getElementById:id=>nodes[id],
+    createElement:tag=>fakeElement(tag),
+    querySelectorAll:selector=>selector==="[data-kind]"?kinds:selector==="[data-workflow]"?workflows:lotTypes,
+    querySelector:()=>advanced,
+    body:{appendChild(){}},
+    execCommand:()=>true
   };
   const storage=storageOverride||new Map();
-  const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
+  const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,val)=>storage.set(key,val),removeItem:key=>storage.delete(key)};
   const window={};
   const context={
-    document,localStorage,window,navigator:{},location:{protocol:"file:"},
-    URL:{createObjectURL:()=> "blob:test",revokeObjectURL(){}},
-    Blob:class{constructor(values){this.contents=values.join("");}},
-    setTimeout(){},confirm:()=>true,Date
+    window,document,localStorage,navigator:{clipboard:{writeText:async()=>{}}},location:{protocol:"file:"},
+    URL:{createObjectURL:()=> "blob:naf-test",revokeObjectURL(){}},
+    Blob:MockBlob,TextEncoder,Date,Math,setTimeout(){},confirm:()=>true
   };
   vm.runInNewContext(js,context,{filename:"app.js"});
-  return {api:window.NAF,nodes,kinds,modes,batches,sources,storage};
+  return {api:window.NAF,nodes,kinds,workflows,lotTypes,storage};
 }
-test("interfaz, favicon y media queries para dispositivos",()=>{
-  assert.match(html,/favicon\.svg/);
+function load(data){return "# NAF\n~~~json\n"+JSON.stringify(data,null,2)+"\n~~~\n";}
+
+test("3 modos sencillos sin estados de producción v0.4",()=>{
+  assert.equal((html.match(/data-workflow=/g)||[]).length,3);
+  assert.doesNotMatch(html,/id="batchProgress"|id="batchItems"|data-batch=/);
+  assert.match(html,/data-lot-type="independent"/);
+  assert.match(html,/data-lot-type="views"/);
+  assert.match(html,/id="referenceImageFile"/);
+  assert.match(html,/id="loadFile"[^>]*hidden/);
+});
+test("diseño responsive conserva tablet, móvil y paisaje",()=>{
   assert.match(html,/viewport-fit=cover/);
   assert.match(css,/@media \(max-width:699px\)/);
   assert.match(css,/@media \(min-width:700px\) and \(max-width:1059px\) and \(orientation:portrait\)/);
   assert.match(css,/orientation:landscape.*max-height:560px/);
+  assert.match(css,/\.workflow-mode.is-active/);
 });
-test("solicitud exterior de Valrik sin nombre, con clasificación territorial válida",()=>{
-  const x=app().api.request();
-  assert.equal(x.asset_type,"scene");
-  assert.equal(x.production_profile,"scene_environment");
-  assert.equal(x.nap_output.classification.location,"valrik");
-  assert.equal(x.geography.procedural_template,true);
-  assert.equal(x.geography.naming_authority,"CoreRPG");
-  assert.equal(x.geography.instance_id,null);
-  assert.deepEqual(Array.from(x.nap_output.master_size),[1920,1080]);
-  assert.equal(x.nap_output.zip_contents.length,5);
-  assert.match(app().api.markdown(),/plantilla visual genérica/i);
+test("imagen única exterior: clasificación territorial y PNG 1920x1080",()=>{
+  const a=app(),req=a.api.request();
+  assert.equal(a.api.getState().workflow,"single");
+  assert.equal(req.identity_mode,"new");
+  assert.equal(req.nap_output.classification.location,"valrik");
+  assert.equal(req.geography.naming_authority,"CoreRPG");
+  assert.deepEqual(Array.from(req.nap_output.master_size),[1920,1080]);
+  assert.equal(req.nap_output.zip_contents.length,5);
+  assert.match(a.api.markdown(),/SOLO UNA IMAGEN/);
+  assert.match(a.api.markdown(),/ID CANDIDATO copiable/);
 });
-test("puede elegir explícitamente la localidad canónica Treskal",()=>{
-  const a=app();
-  a.nodes.place.value="treskal";
-  const x=a.api.request();
-  assert.equal(x.geography.location,"treskal");
-  assert.equal(x.geography.procedural_template,false);
-});
-test("retratos con rol y sexo obligatorios",()=>{
+test("retratos con sexo y edad, 4:5 y biblia de retratos",()=>{
   const a=app();a.kinds[2].dispatch("click");
   assert.throws(()=>a.api.request(),/sexo/);
-  a.nodes.portraitSex.value="female";
-  const x=a.api.request();
-  assert.equal(x.production_profile,"portrait_npc");
-  assert.equal(x.nap_output.classification.sex,"female");
-  assert.equal(x.nap_output.classification.role,"villager");
-  assert.deepEqual(Array.from(x.nap_output.master_size),[768,960]);
-  assert.ok(x.visual_bibles.paths.some(p=>p.includes("NPC_PORTRAIT")));
+  a.nodes.portraitSex.value="female";a.nodes.portraitAge.value="25-30";
+  const q=a.api.request();
+  assert.equal(q.asset_type,"portrait");
+  assert.equal(q.nap_output.classification.sex,"female");
+  assert.deepEqual(Array.from(q.nap_output.master_size),[768,960]);
+  assert.ok(q.visual_bibles.paths.some(p=>p.includes("NPC_PORTRAIT")));
 });
-test("taberna en Rodas y biblia local Edranor",()=>{
+test("interiores de taberna, posada, herrería, tienda y carpintería",()=>{
   const a=app();a.kinds[1].dispatch("click");
-  a.nodes.house.value="edranor";a.nodes.house.dispatch("change");
-  a.nodes.place.value="rodas";
-  a.nodes.subject.value="taberna";
-  const x=a.api.request();
-  assert.equal(x.geography.location,"rodas");
-  assert.equal(x.focus.label,"Taberna");
-  assert.ok(x.visual_bibles.paths.some(p=>p.includes("EDRANOR_ENVIRONMENT")));
+  for(const name of ["taberna","posada","herrería","tienda","carpintería"]){
+    // Los identificadores son ASCII snake_case incluso con acentos.
+    a.nodes.subject.value=name==="herrería"?"herreria":name==="carpintería"?"carpinteria":name;
+    const q=a.api.request();assert.equal(q.category,"interior");assert.equal(q.asset_type,"scene");
+  }
 });
-test("variante con identidad separada; formato NAP y archivo markdown",()=>{
-  const a=app();a.modes[1].dispatch("click");
-  a.nodes.referenceId.value="scene_treskal_tavern_001";
-  assert.equal(a.api.request().reference_asset_id,"scene_treskal_tavern_001");
-  a.nodes.preferredId.value="scene_treskal_tavern_001";
-  assert.throws(()=>a.api.request(),/ID nuevo/);
-  a.nodes.preferredId.value="scene_treskal_tavern_002";
-  assert.match(a.api.markdown(),/~~~json/);
-  assert.match(a.api.markdown(),/schema_version/);
-});
-test("localidad personalizada y límites de NAP",()=>{
-  const a=app();a.nodes.place.value="other";
-  assert.throws(()=>a.api.request(),/localización/);
-  a.nodes.customPlace.value="Villa del Río";
-  assert.equal(a.api.request().geography.location,"villa_del_rio");
-  a.nodes.customPlace.value="a".repeat(65);
-  assert.throws(()=>a.api.request(),/64 caracteres/);
-});
-
-
-test("cargar .md anterior restaura opciones y evita introducir ID de imagen",async()=>{
-  const first=app();
-  first.nodes.place.value="other";
-  first.nodes.customPlace.value="Aldea 1";
-  first.nodes.time.value="manana";
-  first.nodes.weather.value="despejado";
-  first.nodes.season.value="invierno";
-  first.nodes.notes.value="Entrada a la aldea";
-  first.nodes.notes.dispatch("input");
-  const source=first.api.markdown();
-  const second=app();
-  const ok=await second.api.loadMDFile({name:"naf_exterior_valrik.md",size:source.length,text:async()=>source});
-  assert.equal(ok,true);
-  assert.equal(second.nodes.house.value,"valrik");
-  assert.equal(second.nodes.place.value,"other");
-  assert.equal(second.nodes.customPlace.value,"Aldea 1");
-  assert.equal(second.nodes.notes.value,"Entrada a la aldea");
-  assert.equal(second.nodes.time.value,"manana");
-  assert.equal(second.api.request().identity_mode,"new");
-});
-test("cargar un .md y transformarlo en plantilla sin nombre",async()=>{
-  const start=app();
-  start.nodes.place.value="other";
-  start.nodes.customPlace.value="Aldea 1";
-  const md=start.api.markdown();
-  const next=app();
-  assert.equal(await next.api.loadMDFile({name:"antiguo.md",size:md.length,text:async()=>md}),true);
-  next.nodes.place.value="procedural";
-  const x=next.api.request();
-  assert.equal(x.geography.procedural_template,true);
-  assert.equal(x.nap_output.classification.location,"valrik");
-  assert.doesNotMatch(next.api.markdown(),/Aldea 1/);
-});
-test("las variantes conservan el ID real NAP al cargar el .md",async()=>{
-  const start=app();
-  start.modes[1].dispatch("click");
-  start.nodes.referenceId.value="scene_treskal_village_001";
-  start.nodes.notes.value="Misma casa, invierno";
-  const md=start.api.markdown();
-  const next=app();
-  assert.equal(await next.api.loadMDFile({name:"variante.md",size:md.length,text:async()=>md}),true);
-  assert.equal(next.api.request().identity_mode,"variant");
-  assert.equal(next.api.request().reference_asset_id,"scene_treskal_village_001");
-});
-test("rechaza .md malformado o ajeno a NAF sin sobrescribir el formulario",async()=>{
+test("las variantes importan .md, aceptan ID original y conservan relación estructurada",async()=>{
+  const initial=app(),md=initial.api.markdown();
   const a=app();
-  a.nodes.notes.value="Datos originales";
-  assert.equal(await a.api.loadMDFile({name:"otra_cosa.md",size:10,text:async()=>"# Hola"}),false);
-  assert.equal(a.nodes.notes.value,"Datos originales");
-  assert.equal(await a.api.loadMDFile({name:"archivo.txt",size:10,text:async()=>"# Hola"}),false);
-  assert.equal(a.api.request().geography.procedural_template,true);
-});
-test("el borrador se recupera al volver a cargar la web",()=>{
-  const storage=new Map();
-  const a=app(storage);
-  a.nodes.notes.value="Esto debe permanecer";
-  a.nodes.house.value="edranor";
-  a.nodes.house.dispatch("change");
-  a.nodes.notes.dispatch("input");
-  const b=app(storage);
-  assert.equal(b.nodes.house.value,"edranor");
-  assert.equal(b.nodes.notes.value,"Esto debe permanecer");
-  assert.equal(b.nodes.place.value,"procedural");
-});
-
-test("identidad de variantes: referencia pegada de ChatGPT y PNG requerido",()=>{
-  const a=app();a.modes[1].dispatch("click");
-  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
-  const x=a.api.request();
-  assert.equal(x.reference_asset_id,"scene_valrik_aldea_1_approach_winter_morning_001");
-  assert.equal(x.visual_production.original_png_required,true);
-  assert.match(a.api.markdown(),/ID original NO contiene la imagen/);
-});
-test("meteo severa: no clona NPC ni animales a la intemperie",()=>{
-  const a=app();
+  assert.equal(await a.api.loadMDFile({name:"origen.md",size:md.length,text:async()=>md}),true);
+  a.workflows[1].dispatch("click");
+  a.nodes.referenceId.value="scene_valrik_village_001";
   a.nodes.weather.value="lluvia_intensa";
-  const rain=a.api.request();
-  assert.match(rain.visual_production.activity_coherence,/SIN NPC ni animales/);
-  assert.match(rain.visual_production.activity_coherence,/NO conservar las acciones/);
+  const q=a.api.request();
+  assert.equal(q.identity_mode,"variant");
+  assert.equal(q.reference_asset_id,"scene_valrik_village_001");
+  assert.equal(q.visual_production.relationship.base_asset_id,"scene_valrik_village_001");
+  assert.equal(q.visual_production.original_png_required,true);
+  assert.match(a.api.markdown(),/PNG original/);
+});
+test("variante sin ID o con el mismo ID propuesto se rechaza",()=>{
+  const a=app();a.workflows[1].dispatch("click");
+  assert.throws(()=>a.api.request(),/ID de referencia/);
+  a.nodes.referenceId.value="scene_valrik_entrada_001";
+  a.nodes.preferredId.value="scene_valrik_entrada_001";
+  assert.throws(()=>a.api.request(),/ID nuevo/);
+});
+test("lluvia fuerte y nieve no conservan NPC y animales trabajando",()=>{
+  const a=app();a.nodes.weather.value="lluvia_intensa";
+  assert.match(a.api.request().visual_production.activity_coherence,/SIN NPC ni animales/);
   a.nodes.weather.value="nieve";
   assert.match(a.api.request().visual_production.activity_coherence,/SIN NPC ni animales/);
-});
-test("lluvia en interior no elimina a los clientes ni a protagonista de retrato",()=>{
-  const a=app();
   a.kinds[1].dispatch("click");
-  a.nodes.weather.value="lluvia_intensa";
   assert.match(a.api.request().visual_production.activity_coherence,/NO vaciar automáticamente/);
-  a.kinds[2].dispatch("click");a.nodes.portraitSex.value="female";
-  assert.match(a.api.request().visual_production.activity_coherence,/NO eliminar al protagonista/);
 });
-test("lote de variantes: tres imágenes, una misma familia y mismo ID original",()=>{
-  const a=app();
-  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
-  a.batches[1].dispatch("click");
-  const out=a.api.batchRequest();
-  assert.equal(out.batch.mode,"variants");
-  assert.equal(out.items.length,3);
-  assert.equal(out.items[0].request.reference_asset_id,out.items[1].request.reference_asset_id);
-  assert.equal(out.items[0].request.visual_production.visual_family_id,out.items[1].request.visual_production.visual_family_id);
-  assert.equal(out.items[0].request.visual_production.original_png_required,true);
-  assert.match(a.api.markdown(),/esperar su APROBACIÓN/);
+test("solo tras aprobar PNG se permite ZIP; rechazo exige nuevo PNG y nuevo ID",()=>{
+  const md=app().api.markdown();
+  assert.match(md,/RECHAZA el PNG/);
+  assert.match(md,/OTRO PNG con OTRO ID CANDIDATO/);
+  assert.match(md,/ÚNICAMENTE con aprobación explícita/);
+  assert.match(md,/ZIP individual de NAP/);
+  assert.match(md,/NO incluir WebP/);
 });
-test("lote distinto: tres tabernas independientes, familias diferentes y sin referencia",()=>{
+test("lote de 5 posadas: cinco archivos independientes, mismo tema, diferencias lógicas",()=>{
   const a=app();a.kinds[1].dispatch("click");
-  a.nodes.subject.value="taberna";
-  a.batches[2].dispatch("click");
-  const out=a.api.batchRequest();
-  assert.equal(out.batch.mode,"distinct");
-  assert.equal(out.items.length,3);
-  assert.equal(out.items[0].request.identity_mode,"new");
-  assert.equal(out.items[0].request.reference_asset_id,null);
-  assert.ok(out.items[0].request.visual_production.visual_family_id!==out.items[1].request.visual_production.visual_family_id);
-  assert.match(a.api.markdown(),/identidad propia/);
+  a.nodes.subject.value="posada";a.nodes.place.value="treskal";
+  a.workflows[2].dispatch("click");
+  const result=a.api.lotRequests();
+  assert.equal(result.items.length,5);
+  assert.equal(result.batch_type,"independent");
+  assert.ok(result.items.every(q=>q.focus.label==="Posada"));
+  assert.ok(result.items.every(q=>q.identity_mode==="new"&&q.reference_asset_id===null));
+  assert.ok(result.items.every(q=>q.visual_production.visual_family_id===null));
+  assert.equal(new Set(result.items.map(q=>q.free_description)).size,5);
+  assert.match(a.api.lotMarkdown(0),/TEMÁTICO/);
+  assert.match(a.api.lotMarkdown(1),/IMAGEN INDEPENDIENTE 2/);
 });
-test("los lotes se exportan, importan y restauran con ajustes por imagen",async()=>{
-  const a=app();
-  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
-  a.batches[1].dispatch("click");
-  a.nodes.batchTitle.value="Aldea con meteorología";
-  a.nodes.batchTitle.dispatch("input");
-  const source=a.api.markdown();
-  const b=app();
-  assert.equal(await b.api.loadMDFile({name:"lote.md",size:source.length,text:async()=>source}),true);
-  assert.equal(b.api.getState().batchMode,"variants");
-  assert.equal(b.api.batchRequest().items.length,3);
-  assert.equal(b.api.batchRequest().batch.title,"Aldea con meteorología");
+test("lote de vistas: primera panorámica aérea 45 grados, entrada, centro y puntos posteriores",()=>{
+  const a=app();a.workflows[2].dispatch("click");a.lotTypes[1].dispatch("click");
+  const result=a.api.lotRequests();
+  assert.equal(result.batch_type,"views");
+  assert.equal(result.items.length,5);
+  assert.match(result.items[0].appearance.camera,/45°/);
+  assert.match(result.items[0].appearance.camera,/NUNCA cenital/);
+  assert.match(result.items[1].appearance.camera,/Entrada/);
+  assert.match(result.items[2].appearance.camera,/Centro/);
+  assert.equal(new Set(result.items.map(q=>q.visual_production.shared_location_visual_id)).size,1);
+  assert.equal(result.items[0].visual_production.coherence.reference_image_position,null);
+  assert.equal(result.items[1].visual_production.coherence.reference_image_position,1);
+  assert.match(a.api.lotMarkdown(1),/PNG de la primera vista aprobada/);
 });
-test("persistencia del lote sin compartir datos entre dispositivos",()=>{
+test("lote mismo interior conserva arquitectura y no exige vuelo de 45 grados",()=>{
+  const a=app();a.kinds[1].dispatch("click");a.workflows[2].dispatch("click");a.lotTypes[1].dispatch("click");
+  assert.match(a.api.lotRequests().items[0].appearance.camera,/Vista general amplia/);
+  assert.doesNotMatch(a.api.lotRequests().items[0].appearance.camera,/aérea/);
+});
+test("lote de retratos mantiene persona diferente cuando son independientes",()=>{
+  const a=app();a.kinds[2].dispatch("click");a.nodes.portraitSex.value="male";
+  a.workflows[2].dispatch("click");
+  const q=a.api.lotRequests().items;
+  assert.ok(q.every(x=>x.nap_output.classification.sex==="male"));
+  assert.ok(q.every(x=>x.visual_production.coherence.same_physical_place===false));
+  assert.equal(new Set(q.map(x=>x.free_description)).size,5);
+});
+test("cada solicitud de lote es una imagen y lleva índice temático",()=>{
+  const a=app();a.workflows[2].dispatch("click");
+  const md=a.api.lotMarkdown(3);
+  assert.match(md,/Imagen 4 de 5/);
+  assert.match(md,/"batch_index": 4/);
+  assert.match(md,/"batch_total": 5/);
+  assert.match(md,/SOLO UNA IMAGEN/);
+  assert.doesNotMatch(md,/### Imagen 05/);
+});
+test("cantidad de lote personalizable y límites 2 a 12",()=>{
+  const a=app();a.workflows[2].dispatch("click");
+  a.nodes.lotCount.value="2";assert.equal(a.api.lotRequests().items.length,2);
+  a.nodes.lotCount.value="12";assert.equal(a.api.lotRequests().items.length,12);
+  a.nodes.lotCount.value="13";assert.throws(()=>a.api.lotRequests(),/2 y 12/);
+});
+test("ZIP de cinco .md con 5 entradas, local headers y directorio central",()=>{
+  const a=app();a.workflows[2].dispatch("click");
+  const q=a.api.lotRequests();
+  const zip=a.api.zipMarkdowns(q.items.map((item,i)=>({name:"lote_"+(i+1)+".md",text:a.api.makeMarkdown(item)})));
+  const bytes=Buffer.concat(zip.parts.map(p=>Buffer.from(p)));
+  assert.equal(bytes.readUInt32LE(0),0x04034b50);
+  const end=bytes.length-22;assert.equal(bytes.readUInt32LE(end),0x06054b50);
+  assert.equal(bytes.readUInt16LE(end+10),5);
+  assert.equal(bytes.readUInt16LE(end+8),5);
+  assert.equal(bytes.readUInt32LE(end+12)>0,true);
+});
+test("cargar solicitud antigua NAF v0.3-v0.4 sigue funcionando",async()=>{
+  const a=app(),base=a.api.request();
+  delete base.visual_production;
+  const b=app(),md=load(base);
+  assert.equal(await b.api.loadMDFile({name:"naf_older.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.request().geography.house,"valrik");
+});
+test("cargar lote NAF v0.4 recupera campos comunes sin reactivar seguimiento",async()=>{
+  const a=app();const base=a.api.request();
+  const legacy={naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
+    batch:{mode:"distinct",title:"Viejo lote"},base,items:[{request:base},{request:base}]};
+  const b=app(),md=load(legacy);
+  assert.equal(await b.api.loadMDFile({name:"antiguo_lote.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.getState().workflow,"lot");
+  assert.equal(b.api.lotRequests().items.length,2);
+});
+test("borrador conserva modo de trabajo y datos en el mismo dispositivo",()=>{
   const storage=new Map(),a=app(storage);
-  a.batches[2].dispatch("click");
-  a.nodes.batchTitle.value="Tabernas independientes";
-  a.nodes.batchTitle.dispatch("input");
+  a.kinds[1].dispatch("click");a.nodes.subject.value="posada";
+  a.nodes.lotCount.value="6";a.nodes.lotTitle.value="Posadas de Treskal";
+  a.workflows[2].dispatch("click");a.lotTypes[1].dispatch("click");
+  a.nodes.lotTitle.dispatch("input");
   const b=app(storage);
-  assert.equal(b.api.getState().batchMode,"distinct");
-  assert.equal(b.api.getState().batchCount,3);
-  assert.equal(b.api.batchRequest().batch.title,"Tabernas independientes");
+  assert.equal(b.api.getState().workflow,"lot");
+  assert.equal(b.api.getState().lotType,"views");
+  assert.equal(b.api.lotRequests().items.length,6);
 });
-test("lote con ID nuevo propuesto se rechaza para evitar colisiones",()=>{
-  const a=app();
-  a.nodes.preferredId.value="scene_valrik_tavern_001";
-  a.batches[2].dispatch("click");
-  assert.throws(()=>a.api.batchRequest(),/deja vacío/);
+test("markdown de un lote se puede recargar como imagen individual",async()=>{
+  const a=app();a.workflows[2].dispatch("click");
+  const md=a.api.lotMarkdown(0),b=app();
+  assert.equal(await b.api.loadMDFile({name:"lote_01.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.getState().workflow,"single");
+  assert.equal(b.api.request().asset_type,"scene");
 });
-
-
-test("lote nuevo sin ID: imagen base primero, variantes pendientes hasta aprobación",()=>{
-  const a=app();a.batches[1].dispatch("click");
-  assert.equal(a.api.getState().sourceMode,"new");
-  const data=a.api.batchRequest();
-  assert.equal(data.batch.source_mode,"new");
-  assert.equal(data.items[0].request.identity_mode,"new");
-  assert.equal(data.items[0].request.reference_asset_id,null);
-  assert.equal(data.items[1].request.identity_mode,"variant");
-  assert.equal(data.items[1].request.reference_asset_id,null);
-  assert.equal(data.items[1].request.visual_production.pending_reference_from_batch_position,1);
-  assert.equal(data.items[0].request.appearance.weather,"Despejado");
-  assert.match(a.api.markdown(),/SIN ID PREVIO/);
+test("markdown variante se puede recargar conservando ID",async()=>{
+  const a=app();a.workflows[1].dispatch("click");a.nodes.referenceId.value="scene_valrik_village_001";
+  const md=a.api.markdown(),b=app();
+  assert.equal(await b.api.loadMDFile({name:"variante.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.getState().workflow,"variant");
+  assert.equal(b.api.request().reference_asset_id,"scene_valrik_village_001");
 });
-test("cambiar de base nueva a imagen con ID obliga a aportar ID real",()=>{
-  const a=app();a.batches[1].dispatch("click");
-  a.sources[1].dispatch("click");
-  assert.equal(a.api.getState().sourceMode,"existing");
-  assert.throws(()=>a.api.batchRequest(),/ID de referencia/);
-  a.nodes.referenceId.value="scene_valrik_village_morning_001";
-  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,"scene_valrik_village_morning_001");
-  a.sources[0].dispatch("click");
-  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,null);
-});
-test("recuperar de .md lote que crea imagen base sin referencia previa",async()=>{
-  const a=app();a.batches[1].dispatch("click");const source=a.api.markdown();
-  const b=app();
-  assert.equal(await b.api.loadMDFile({name:"aldea_lote.md",size:source.length,text:async()=>source}),true);
-  assert.equal(b.api.getState().sourceMode,"new");
-  assert.equal(b.api.batchRequest().items[0].request.identity_mode,"new");
-});
-
-test("NAF v0.4 tiene seguimiento y controles de producción individual",()=>{
-  assert.match(html,/id="batchProgress"/);
-  assert.match(html,/id="externalPngAvailable"/);
-  assert.match(js,/Descargar esta imagen \.md/);
-  assert.match(css,/.batch-tracker-fields/);
-});
-test("lote distinto: cada imagen puede exportarse sin enviar las demás",()=>{
-  const a=app();a.kinds[1].dispatch("click");a.nodes.subject.value="taberna";
-  a.batches[2].dispatch("click");
-  const first=a.api.individualRequest(0);
-  const second=a.api.individualRequest(1);
-  assert.equal(first.visual_production.batch_position,1);
-  assert.equal(first.visual_production.batch_total,3);
-  assert.equal(first.visual_production.must_generate_one_image_only,true);
-  assert.equal(first.reference_asset_id,null);
-  assert.ok(first.visual_production.visual_family_id!==second.visual_production.visual_family_id);
-  const md=a.api.individualMarkdown(0);
-  assert.match(md,/UNA SOLA imagen/);
-  assert.match(md,/~~~json/);
-  assert.doesNotMatch(md,/### Imagen 02/);
-  assert.match(md,/NO añadirlos al manifest v2/);
-});
-test("variante dependiente bloqueada hasta aprobar PNG base e indicar ID definitivo",()=>{
-  const a=app();a.batches[1].dispatch("click");
-  assert.equal(a.api.itemReadiness(0).ok,true);
-  assert.equal(a.api.itemReadiness(1).ok,false);
-  assert.throws(()=>a.api.individualRequest(1),/Bloqueada/);
-  assert.equal(a.api.setItemStatus(0,"approved"),false);
-  assert.equal(a.api.setItemPngAvailable(0,true),true);
-  assert.equal(a.api.setItemStatus(0,"approved"),true);
-  assert.equal(a.api.itemReadiness(1).ok,false);
-  const id="scene_valrik_village_base_001";
-  assert.equal(a.api.setItemAssetId(0,id),true);
-  assert.equal(a.api.itemReadiness(1).ok,true);
-  assert.equal(a.api.individualRequest(1).reference_asset_id,id);
-  assert.equal(a.api.individualRequest(1).visual_production.pending_reference_from_batch_position,null);
-  assert.equal(a.api.individualRequest(1).visual_production.original_png_required,true);
-  assert.equal(a.api.batchRequest().items[0].request.visual_production.visual_family_id,
-    a.api.batchRequest().items[1].request.visual_production.visual_family_id);
-});
-test("lote con imagen existente: referencia y disponibilidad real del PNG",()=>{
-  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
-  assert.equal(a.api.itemReadiness(0).ok,false);
-  a.nodes.referenceId.value="scene_valrik_village_001";
-  a.nodes.referenceId.dispatch("change");
-  assert.equal(a.api.itemReadiness(0).ok,false);
-  a.nodes.externalPngAvailable.checked=true;a.nodes.externalPngAvailable.dispatch("change");
-  assert.equal(a.api.itemReadiness(0).ok,true);
-  assert.equal(a.api.individualRequest(0).reference_asset_id,"scene_valrik_village_001");
-});
-test("seguimiento PNG aprobado ID ZIP con transición controlada",()=>{
-  const a=app();a.batches[2].dispatch("click");
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
-  assert.equal(a.api.setItemStatus(0,"png_generated"),true);
-  assert.equal(a.api.setItemStatus(0,"approved"),false);
-  assert.equal(a.api.setItemPngAvailable(0,true),true);
-  assert.equal(a.api.setItemStatus(0,"approved"),true);
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
-  assert.equal(a.api.setItemAssetId(0,"scene_valrik_tavern_interior_001"),true);
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),true);
-  assert.equal(a.api.itemReadiness(0).ok,false);
-  assert.equal(a.api.batchRequest().items[0].progress.status,"zip_delivered");
-});
-test("un ID repetido en dos imágenes del lote no permite marcar ZIP entregado",()=>{
-  const a=app();a.batches[2].dispatch("click");
-  const id="scene_valrik_tavern_interior_001";
-  for(let i=0;i<2;i++){
-    a.api.setItemPngAvailable(i,true);
-    a.api.setItemStatus(i,"approved");
-    a.api.setItemAssetId(i,id);
-  }
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
-  assert.equal(a.api.setItemAssetId(1,"scene_valrik_tavern_interior_002"),true);
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),true);
-  assert.equal(a.api.setItemStatus(1,"zip_delivered"),true);
-});
-test("variante nueva no puede sobrescribir el mismo ID que la original",()=>{
-  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
-  a.nodes.referenceId.value="scene_valrik_original_001";
-  a.api.setItemPngAvailable(0,true);
-  a.api.setItemStatus(0,"approved");
-  a.api.setItemAssetId(0,"scene_valrik_original_001");
-  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
-});
-test("estado descartado impide repetir la solicitud individual",()=>{
-  const a=app();a.batches[2].dispatch("click");
-  assert.equal(a.api.setItemStatus(1,"rejected"),true);
-  assert.equal(a.api.itemReadiness(1).ok,false);
-  assert.throws(()=>a.api.individualMarkdown(1),/descartada/);
-});
-test("no se retira aprobación de la base tras iniciar una variante",()=>{
-  const a=app();a.batches[1].dispatch("click");
-  a.api.setItemPngAvailable(0,true);a.api.setItemStatus(0,"approved");
-  a.api.setItemAssetId(0,"scene_valrik_village_001");
-  a.api.setItemStatus(1,"in_preparation");
-  assert.equal(a.api.setItemStatus(0,"rejected"),false);
-  assert.equal(a.api.setItemAssetId(0,"scene_valrik_different_001"),false);
-});
-test("exportación e importación conservan progreso e IDs entre dispositivos",async()=>{
-  const a=app();a.batches[1].dispatch("click");
-  a.api.setItemPngAvailable(0,true);
-  a.api.setItemStatus(0,"approved");
-  a.api.setItemAssetId(0,"scene_valrik_village_base_001");
+test("el .md no incluye píxeles ni necesita comunicación con servidor",()=>{
+  const a=app();a.workflows[1].dispatch("click");a.nodes.referenceId.value="scene_valrik_village_001";
   const md=a.api.markdown();
-  assert.match(md,/PNG: disponible/);
-  const b=app();
-  assert.equal(await b.api.loadMDFile({name:"seguimiento.md",size:md.length,text:async()=>md}),true);
-  assert.equal(b.api.batchRequest().items[0].progress.status,"approved");
-  assert.equal(b.api.batchRequest().items[0].progress.asset_id,"scene_valrik_village_base_001");
-  assert.equal(b.api.itemReadiness(1).ok,true);
+  assert.doesNotMatch(md,/data:image\/png;base64/);
+  assert.match(md,/Si no está accesible, solicitar/);
+  assert.doesNotMatch(js,/fetch\(|XMLHttpRequest/);
 });
-test("cargar lote v0.3 sin progreso asigna estado pendiente",async()=>{
-  const a=app();a.batches[2].dispatch("click");
-  const legacy=a.api.batchRequest();
-  legacy.items.forEach(i=>delete i.progress);
-  delete legacy.batch.external_png_available;
-  const md="# NAF\n~~~json\n"+JSON.stringify(legacy,null,2)+"\n~~~\n";
-  const b=app();
-  assert.equal(await b.api.loadMDFile({name:"old.md",size:md.length,text:async()=>md}),true);
-  assert.equal(b.api.batchRequest().items[0].progress.status,"pending");
-  assert.equal(b.api.batchRequest().items[0].progress.asset_id,"");
-});
-test("borrador conserva estado al reabrir NAF en mismo dispositivo",()=>{
-  const storage=new Map(),a=app(storage);a.batches[2].dispatch("click");
-  a.api.setItemPngAvailable(1,true);
-  a.api.setItemStatus(1,"approved");
-  a.api.setItemAssetId(1,"scene_valrik_tavern_002");
-  const b=app(storage);
-  assert.equal(b.api.batchRequest().items[1].progress.status,"approved");
-  assert.equal(b.api.batchRequest().items[1].progress.asset_id,"scene_valrik_tavern_002");
-  assert.equal(b.api.batchRequest().items[1].progress.png_available,true);
-});
-
-test("no se puede avanzar estado de una variante sin la base aprobada",()=>{
-  const a=app();a.batches[1].dispatch("click");
-  assert.equal(a.api.setItemStatus(1,"in_preparation"),false);
-  assert.equal(a.api.setItemStatus(1,"png_generated"),false);
-  a.api.setItemPngAvailable(0,true);
-  a.api.setItemStatus(0,"approved");
-  a.api.setItemAssetId(0,"scene_valrik_base_001");
-  assert.equal(a.api.setItemStatus(1,"in_preparation"),true);
-});
-test("alterna imagen individual y lote sin perder progreso",()=>{
-  const a=app();a.batches[2].dispatch("click");
-  a.api.setItemPngAvailable(1,true);
-  a.api.setItemStatus(1,"approved");
-  a.api.setItemAssetId(1,"scene_valrik_tavern_002");
-  a.batches[0].dispatch("click");
-  assert.equal(a.api.getState().batchMode,"single");
-  a.batches[2].dispatch("click");
-  assert.equal(a.api.getState().batchMode,"distinct");
-  assert.equal(a.api.batchRequest().items[1].progress.status,"approved");
-  assert.equal(a.api.batchRequest().items[1].progress.asset_id,"scene_valrik_tavern_002");
-});
-test("cambiar el tipo de lote reinicia progreso pero no afecta a NAP",()=>{
-  const a=app();a.batches[2].dispatch("click");
-  a.api.setItemPngAvailable(0,true);a.api.setItemStatus(0,"approved");
-  a.batches[1].dispatch("click");
-  assert.equal(a.api.getState().batchMode,"variants");
-  assert.equal(a.api.batchRequest().items[0].progress.status,"pending");
-});
-test("PNG de origen de una variante existente se conserva al exportar e importar",async()=>{
-  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
-  a.nodes.referenceId.value="scene_valrik_original_001";
-  a.nodes.externalPngAvailable.checked=true;a.nodes.externalPngAvailable.dispatch("change");
-  const md=a.api.markdown();
-  const b=app();assert.equal(await b.api.loadMDFile({name:"variant_progress.md",size:md.length,text:async()=>md}),true);
-  assert.equal(b.api.batchRequest().batch.external_png_available,true);
-  assert.equal(b.api.itemReadiness(0).ok,true);
+test("rechazo de .md no NAF no destruye el borrador",async()=>{
+  const a=app();a.nodes.notes.value="Mi descripción";
+  assert.equal(await a.api.loadMDFile({name:"otro.md",size:2,text:async()=>"# hola"}),false);
+  assert.equal(a.nodes.notes.value,"Mi descripción");
 });
