@@ -227,6 +227,168 @@
       return false;
     }
   }
+
+  function activityRule(category,weather,time){
+    if(category==="portrait")return "Retrato: NO eliminar al protagonista por lluvia o nieve. Adaptar vestuario, humedad o fondo cuando proceda, conforme al canon.";
+    if(category==="interior")return "Interior: NO vaciar automáticamente una taberna o posada porque llueva o nieve fuera. Puede haber clientes refugiados; efectos del clima visibles solo con sentido físico.";
+    if(["lluvia_intensa","tormenta","ventisca","nieve"].includes(weather))
+      return "Exterior con condiciones adversas: por defecto SIN NPC ni animales realizando actividad normal a la intemperie. Despejar caminos y plazas de vida injustificada; solo admitir personas resguardándose o con tareas urgentes y protección adecuada. Adaptar charcos, escorrentía, barro, nieve, huellas y refugios de forma físicamente coherente. NO conservar las acciones del PNG despejado.";
+    if(["lluvia_suave","llovizna"].includes(weather))
+      return "Exterior con lluvia suave: menos actividad desprotegida; NPC y animales bajo techo o moviéndose con protección. Evitar repetir las mismas acciones bajo la lluvia.";
+    if(["noche","madrugada"].includes(time))
+      return "Exterior nocturno: menos actividad cotidiana; presencia de NPC o animales solo por guardias, trabajo necesario u otro motivo plausible; luces coherentes.";
+    return "Las variantes mantienen edificios, cámara y disposición, pero la actividad de NPC y animales se adapta siempre a clima, hora y estación.";
+  }
+  function newBatchId(){
+    return "naf_batch_"+new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14)+"_"+Math.random().toString(36).slice(2,8);
+  }
+  function defaultBatchItem(index,kindOfBatch){
+    return {weather:kindOfBatch==="variants"?["lluvia_suave","lluvia_intensa","nieve"][index%3]:"auto",
+      time:"auto",season:"auto",notes:""};
+  }
+  function normalizeBatchItem(item){
+    const pick=(id,v)=>Array.from($(id).options).some(o=>o.value===v)?v:"auto";
+    return {weather:pick("weather",item?.weather),time:pick("time",item?.time),
+      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):""};
+  }
+  function renderBatch(){
+    document.querySelectorAll("[data-batch]").forEach(button=>{
+      const selected=button.dataset.batch===batchMode;
+      button.classList.toggle("is-active",selected);
+      button.setAttribute("aria-pressed",String(selected));
+    });
+    $("batchPanel").classList.toggle("is-hidden",batchMode==="single");
+    $("familyWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    $("batchHelp").textContent=batchMode==="variants"?
+      "Cada variante utiliza la MISMA imagen original y su ID (bloque 01). El PNG original también debe estar accesible. No mantengas NPC trabajando al aire libre bajo un temporal.":
+      "Cada elemento representará un lugar o personaje INDEPENDIENTE. Evitaremos repetir la misma taberna o los mismos personajes.";
+    $("batchCount").textContent=String(batchItems.length);
+    $("addBatchBtn").disabled=batchItems.length>=12;
+    const container=$("batchItems");
+    container.replaceChildren();
+    if(batchMode==="single")return;
+    batchItems.forEach((item,index)=>{
+      const card=document.createElement("div");card.className="batch-item";
+      const heading=document.createElement("div");heading.className="batch-item-head";
+      const label=document.createElement("strong");
+      label.textContent=(batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
+      const remove=document.createElement("button");remove.type="button";
+      remove.className="batch-remove";remove.textContent="Quitar";remove.disabled=batchItems.length<=2;
+      remove.addEventListener("click",()=>{
+        if(batchItems.length<=2)return;
+        batchItems.splice(index,1);renderBatch();sync();
+      });
+      heading.append(label,remove);
+      const fields=document.createElement("div");fields.className="batch-item-fields";
+      for(const [source,key,title] of [["weather","weather","Clima"],["time","time","Hora"],["season","season","Estación"]]){
+        const wrapper=document.createElement("div");wrapper.className="field";
+        const fieldLabel=document.createElement("label");fieldLabel.textContent=title;
+        const select=document.createElement("select");select.setAttribute("aria-label",title+" de imagen "+(index+1));
+        select.replaceChildren(...Array.from($(source).options).map(o=>addOpt(o.value,o.textContent)));
+        select.value=item[key];select.addEventListener("change",()=>{item[key]=select.value;sync();});
+        wrapper.append(fieldLabel,select);fields.append(wrapper);
+      }
+      const wrapper=document.createElement("div");wrapper.className="field batch-item-notes";
+      const fieldLabel=document.createElement("label");fieldLabel.textContent="Detalle particular (opcional)";
+      const input=document.createElement("input");input.type="text";input.maxLength=400;
+      input.value=item.notes;
+      input.placeholder=batchMode==="variants"?"Ej.: camino inundado, nieve sobre los tejados":"Ej.: taberna pequeña, distinto mobiliario";
+      input.addEventListener("input",()=>{item.notes=input.value;sync();});
+      wrapper.append(fieldLabel,input);fields.append(wrapper);
+      card.append(heading,fields);container.append(card);
+    });
+  }
+  function setBatchMode(value,resetItems=true){
+    const chosen=["variants","distinct"].includes(value)?value:"single";
+    const changed=chosen!==batchMode;batchMode=chosen;
+    if(batchMode!=="single"){
+      if(!batchId)batchId=newBatchId();
+      if(resetItems&&changed||batchItems.length<2)
+        batchItems=[0,1,2].map(i=>defaultBatchItem(i,batchMode));
+      setMode(batchMode==="variants"?"variant":"new");
+    }
+    document.querySelectorAll("[data-mode]").forEach(button=>{
+      button.disabled=batchMode==="variants"?button.dataset.mode==="new":
+        batchMode==="distinct"?button.dataset.mode==="variant":false;
+    });
+    renderBatch();sync();
+  }
+  function addBatchItem(){
+    if(batchMode==="single"||batchItems.length>=12)return;
+    batchItems.push(defaultBatchItem(batchItems.length,batchMode));renderBatch();sync();
+  }
+  function batchRequest(){
+    if(batchMode==="single")throw Error("Selecciona «Misma escena» o «Imágenes distintas».");
+    if(batchItems.length<2||batchItems.length>12)throw Error("Un lote admite entre 2 y 12 imágenes.");
+    const base=request();
+    if(base.asset_id_proposed)throw Error("En un lote, deja vacío «ID nuevo propuesto». Cada imagen aprobada recibirá un ID propio.");
+    const title=$("batchTitle").value.trim()||
+      (batchMode==="variants"?"Variantes de "+base.focus.label:"Imágenes distintas de "+base.focus.label);
+    const familyId=batchMode==="variants"?"family_"+slug($("familyName").value.trim()||base.reference_asset_id).slice(0,80):null;
+    const images=batchItems.map((item,index)=>{
+      const task=JSON.parse(JSON.stringify(base));
+      const choice=(key,source)=>item[key]==="auto"?task.appearance[source]:
+        Array.from($(key).options).find(o=>o.value===item[key])?.textContent||task.appearance[source];
+      task.appearance.weather=choice("weather","weather");
+      task.appearance.time=choice("time","time");
+      task.appearance.season=choice("season","season");
+      task.free_description=[base.free_description,item.notes].filter(Boolean).join("\nDetalle particular: ");
+      const isVariant=batchMode==="variants";
+      task.identity_mode=isVariant?"variant":"new";
+      task.reference_asset_id=isVariant?base.reference_asset_id:null;
+      task.asset_id_proposed=null;
+      task.visual_production={
+        batch_id:batchId,visual_family_id:isVariant?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
+        same_visual_identity:isVariant,reference_asset_id:task.reference_asset_id,
+        original_png_required:isVariant,approval:"author_review_before_definitive_id_and_nap_zip",
+        activity_coherence:activityRule(kind,item.weather==="auto"?$("weather").value:item.weather,
+          item.time==="auto"?$("time").value:item.time)
+      };
+      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,request:task};
+    });
+    return {naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
+      batch:{id:batchId,title,mode:batchMode,family_label:$("familyName").value.trim(),
+        visual_family_id:familyId,item_count:images.length,
+        approval_policy:"individual_png_review_before_id_and_zip"},
+      base,items:images,
+      nap_delivery:{one_zip_per_approved_image:true,zip_flat_five_files:true,
+        no_sqlite_registration_in_naf:true,group_metadata_in_visual_identity:true,
+        manifest_v2_no_extra_fields:true,routing_by_manifest_classification:true}};
+  }
+  function batchMarkdown(){
+    const data=batchRequest();
+    const jobs=data.items.flatMap(item=>[
+      "### Imagen "+String(item.position).padStart(2,"0"),
+      "- Meteorología: "+item.request.appearance.weather,
+      "- Hora: "+item.request.appearance.time,
+      "- Estación: "+item.request.appearance.season,
+      "- Detalles: "+(item.notes||"Lo indicado en las biblias y la solicitud común"),
+      "- Continuidad: "+(item.request.visual_production.same_visual_identity?"MISMO escenario que el PNG original":"NUEVA identidad, distinta de las otras"),
+      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,""
+    ]);
+    return [
+      "# NAF — Lote: "+data.batch.title,"",
+      "> Solicitud para ChatGPT. No es un ZIP listo para NAP.","",
+      "## Reglas del lote","",
+      "- Comprobar las biblias visuales y el canon territorial de cada imagen.",
+      "- MISMA ESCENA: usar el asset_id original pegado y el PNG original accesible o adjunto; conservar perspectiva, edificios y distribución. Cambiar clima, iluminación y actividad coherentemente.",
+      "- IMÁGENES DISTINTAS: cada taberna, casa, aldea o NPC debe tener identidad propia y diseño distinto, sin reutilizar edificios/encuadres por defecto.",
+      "- NO conservar aldeanos trabajando a la intemperie durante lluvia fuerte, ventisca o nevada; permitir solo actividad justificada y refugios coherentes. En interiores y retratos, no eliminar automáticamente a los protagonistas.",
+      "- GENERAR y mostrar cada PNG al autor; esperar su APROBACIÓN antes de entregar el ID definitivo y producir el ZIP de ese asset. Descartes no llegan a NAP.",
+      "- Cada imagen aprobada tendrá su propio ID único y su ZIP plano con cinco archivos (PNG, manifest, prompt, info y visual_identity). Nunca importar el lote .md directamente en NAP.",
+      "- Conservar batch_id, visual_family_id y reference_asset_id en _visual_identity.json. NO agregar estas claves al manifest v2. NAP archiva mediante classification del manifest, no por palabras del ZIP.",
+      "- Las familias visuales no son nombres ni instancias de aldeas CoreRPG.","",
+      "## Lista de imágenes","",...jobs,
+      "## Datos estructurados","",
+      "~~~json",JSON.stringify(data,null,2),"~~~","",
+      "## Referencias del contrato NAP","",
+      "- robdor80/NAP/config/universes/nimroel/profile.json",
+      "- robdor80/NAP/docs/MANIFEST_V2.md",
+      "- robdor80/NAP/docs/NAMING_V1.md","",
+      "Generado con NAF v0.3."
+    ].join("\n")+"\n";
+  }
+
   function request(){
     const preferred=$("preferredId").value.trim(),ref=$("referenceId").value.trim(),portrait=kind==="portrait";
     if($("place").value==="other"&&!$("customPlace").value.trim())throw Error("Escribe el nombre de la localización.");
