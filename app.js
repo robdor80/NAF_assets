@@ -31,7 +31,7 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
-  let batchMode="single",batchItems=[],batchId="";
+  let batchMode="single",batchItems=[],batchId="",sourceMode="new";
   function slug(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
   function addOpt(v,t){const x=document.createElement("option");x.value=v;x.textContent=t;return x;}
   function fill(id,choices,preferred){$(id).replaceChildren(...choices.map(x=>addOpt(x[0],x[1])));if(choices.some(x=>x[0]===preferred))$(id).value=preferred;}
@@ -110,7 +110,7 @@
   }
   function save(){
     const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual],
-      batchMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
+      batchMode,sourceMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
     fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
@@ -125,6 +125,7 @@
     $("familyName").value=String(o.familyName||"").slice(0,80);
     batchId=typeof o.batchId==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(o.batchId)?o.batchId:"";
     batchItems=Array.isArray(o.batchItems)?o.batchItems.slice(0,12).map(normalizeBatchItem):[];
+    sourceMode=o.sourceMode==="existing"?"existing":"new";
     setBatchMode(["variants","distinct"].includes(o.batchMode)?o.batchMode:"single",false);
     renderBibles();sync();
   }
@@ -141,7 +142,7 @@
         !Array.isArray(data.items)||data.items.length<2||data.items.length>12||
         data.base?.kind!=="solicitud_no_paquete_nap"||!houses[data.base?.geography?.house]||
         !data.base?.appearance||!data.base?.focus||!data.base?.nap_output||
-        (data.batch.mode==="variants"&&!validId.test(data.base.reference_asset_id||"")))
+        (data.batch.mode==="variants"&&data.batch.source_mode!=="new"&&!validId.test(data.base.reference_asset_id||"")))
         throw Error("El lote NAF no es válido (máximo 12 imágenes).");
       return data;
     }
@@ -166,6 +167,7 @@
       $("familyName").value=String(data.batch.family_label||"").slice(0,80);
       batchId=typeof data.batch.id==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(data.batch.id)?data.batch.id:"";
       batchItems=data.items.map(i=>normalizeBatchItem(i)).slice(0,12);
+      sourceMode=data.batch.source_mode==="new"?"new":"existing";
       setBatchMode(data.batch.mode,false);sync();
       return;
     }
@@ -243,7 +245,7 @@
     return "naf_batch_"+new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14)+"_"+Math.random().toString(36).slice(2,8);
   }
   function defaultBatchItem(index,kindOfBatch){
-    return {weather:kindOfBatch==="variants"?["lluvia_suave","lluvia_intensa","nieve"][index%3]:"auto",
+    return {weather:kindOfBatch==="variants"?(sourceMode==="new"?["despejado","lluvia_intensa","nieve"][index%3]:["lluvia_suave","lluvia_intensa","nieve"][index%3]):"auto",
       time:"auto",season:"auto",notes:""};
   }
   function normalizeBatchItem(item){
@@ -259,8 +261,16 @@
     });
     $("batchPanel").classList.toggle("is-hidden",batchMode==="single");
     $("familyWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    $("batchSourceWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    document.querySelectorAll("[data-source]").forEach(button=>{
+      const selected=button.dataset.source===sourceMode;
+      button.classList.toggle("is-active",selected);button.setAttribute("aria-pressed",String(selected));
+    });
+    $("batchSourceHint").textContent=sourceMode==="new"?
+      "Primero generaré la imagen base y tú la aprobarás. Con su ID y PNG prepararé después las variantes.":
+      "Pega en el bloque 01 el ID de la imagen ya aprobada. El PNG original también debe estar accesible.";
     $("batchHelp").textContent=batchMode==="variants"?
-      "Cada variante utiliza la MISMA imagen original y su ID (bloque 01). El PNG original también debe estar accesible. No mantengas NPC trabajando al aire libre bajo un temporal.":
+      (sourceMode==="new"?"La primera imagen creará la identidad de la aldea. Las restantes se generarán DESPUÉS de que apruebes la primera y exista su ID real.":"Todas partirán del ID de la imagen original que pegues. Se preservará su identidad visual.")+ " No conservar NPC trabajando al aire libre durante un temporal.":
       "Cada elemento representará un lugar o personaje INDEPENDIENTE. Evitaremos repetir la misma taberna o los mismos personajes.";
     $("batchCount").textContent=String(batchItems.length);
     $("addBatchBtn").disabled=batchItems.length>=12;
@@ -271,7 +281,7 @@
       const card=document.createElement("div");card.className="batch-item";
       const heading=document.createElement("div");heading.className="batch-item-head";
       const label=document.createElement("strong");
-      label.textContent=(batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
+      label.textContent=(batchMode==="variants"&&sourceMode==="new"&&index===0?"Imagen base ":batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
       const remove=document.createElement("button");remove.type="button";
       remove.className="batch-remove";remove.textContent="Quitar";remove.disabled=batchItems.length<=2;
       remove.addEventListener("click",()=>{
@@ -301,16 +311,26 @@
   function setBatchMode(value,resetItems=true){
     const chosen=["variants","distinct"].includes(value)?value:"single";
     const changed=chosen!==batchMode;batchMode=chosen;
+    if(changed&&batchMode==="variants")sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
     if(batchMode!=="single"){
       if(!batchId)batchId=newBatchId();
       if(resetItems&&changed||batchItems.length<2)
         batchItems=[0,1,2].map(i=>defaultBatchItem(i,batchMode));
-      setMode(batchMode==="variants"?"variant":"new");
+      setMode(batchMode==="variants"&&sourceMode==="existing"?"variant":"new");
     }
     document.querySelectorAll("[data-mode]").forEach(button=>{
-      button.disabled=batchMode==="variants"?button.dataset.mode==="new":
+      button.disabled=batchMode==="variants"?(sourceMode==="new"?button.dataset.mode==="variant":button.dataset.mode==="new"):
         batchMode==="distinct"?button.dataset.mode==="variant":false;
     });
+    renderBatch();sync();
+  }
+  function setSourceMode(value){
+    if(batchMode!=="variants")return;
+    sourceMode=value==="existing"?"existing":"new";
+    setMode(sourceMode==="existing"?"variant":"new");
+    document.querySelectorAll("[data-mode]").forEach(button=>{button.disabled=
+      sourceMode==="existing"?button.dataset.mode==="new":button.dataset.mode==="variant";});
+    batchItems=[0,1,2].map(i=>defaultBatchItem(i,"variants"));
     renderBatch();sync();
   }
   function addBatchItem(){
@@ -324,7 +344,7 @@
     if(base.asset_id_proposed)throw Error("En un lote, deja vacío «ID nuevo propuesto». Cada imagen aprobada recibirá un ID propio.");
     const title=$("batchTitle").value.trim()||
       (batchMode==="variants"?"Variantes de "+base.focus.label:"Imágenes distintas de "+base.focus.label);
-    const familyId=batchMode==="variants"?"family_"+slug($("familyName").value.trim()||base.reference_asset_id).slice(0,80):null;
+    const familyId=batchMode==="variants"?"family_"+slug($("familyName").value.trim()||base.reference_asset_id||[$("house").value,focusName(),batchId].join("_")).slice(0,80):null;
     const images=batchItems.map((item,index)=>{
       const task=JSON.parse(JSON.stringify(base));
       const choice=(key,source)=>item[key]==="auto"?task.appearance[source]:
@@ -333,21 +353,23 @@
       task.appearance.time=choice("time","time");
       task.appearance.season=choice("season","season");
       task.free_description=[base.free_description,item.notes].filter(Boolean).join("\nDetalle particular: ");
-      const isVariant=batchMode==="variants";
+      const isVariant=batchMode==="variants"&&(sourceMode==="existing"||index>0);
       task.identity_mode=isVariant?"variant":"new";
-      task.reference_asset_id=isVariant?base.reference_asset_id:null;
+      task.reference_asset_id=isVariant&&sourceMode==="existing"?base.reference_asset_id:null;
       task.asset_id_proposed=null;
       task.visual_production={
         batch_id:batchId,visual_family_id:isVariant?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
         same_visual_identity:isVariant,reference_asset_id:task.reference_asset_id,
-        original_png_required:isVariant,approval:"author_review_before_definitive_id_and_nap_zip",
+        pending_reference_from_batch_position:isVariant&&sourceMode==="new"?1:null,
+        original_png_required:isVariant,
+        approval:"author_review_before_definitive_id_and_nap_zip",
         activity_coherence:activityRule(kind,item.weather==="auto"?$("weather").value:item.weather,
           item.time==="auto"?$("time").value:item.time)
       };
       return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,request:task};
     });
     return {naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
-      batch:{id:batchId,title,mode:batchMode,family_label:$("familyName").value.trim(),
+      batch:{id:batchId,title,mode:batchMode,source_mode:batchMode==="variants"?sourceMode:null,family_label:$("familyName").value.trim(),
         visual_family_id:familyId,item_count:images.length,
         approval_policy:"individual_png_review_before_id_and_zip"},
       base,items:images,
@@ -371,7 +393,8 @@
       "> Solicitud para ChatGPT. No es un ZIP listo para NAP.","",
       "## Reglas del lote","",
       "- Comprobar las biblias visuales y el canon territorial de cada imagen.",
-      "- MISMA ESCENA: usar el asset_id original pegado y el PNG original accesible o adjunto; conservar perspectiva, edificios y distribución. Cambiar clima, iluminación y actividad coherentemente.",
+      "- MISMA ESCENA CON ID: usar el asset_id original pegado y el PNG original accesible o adjunto; conservar perspectiva, edificios y distribución.",
+      "- MISMA ESCENA SIN ID PREVIO: generar PRIMERO la imagen base del lote. Esperar aprobación del autor, asignar su ID y crear su ZIP. Solo entonces usar el PNG y el ID aprobados para las variantes restantes; no inventar un ID ni generar todas las variantes sin la base.",
       "- IMÁGENES DISTINTAS: cada taberna, casa, aldea o NPC debe tener identidad propia y diseño distinto, sin reutilizar edificios/encuadres por defecto.",
       "- NO conservar aldeanos trabajando a la intemperie durante lluvia fuerte, ventisca o nevada; permitir solo actividad justificada y refugios coherentes. En interiores y retratos, no eliminar automáticamente a los protagonistas.",
       "- GENERAR y mostrar cada PNG al autor; esperar su APROBACIÓN antes de entregar el ID definitivo y producir el ZIP de ese asset. Descartes no llegan a NAP.",
@@ -501,7 +524,7 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    batchMode="single";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    batchMode="single";sourceMode="new";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
     setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
     document.querySelector(".advanced").open=false;sync();
   }
@@ -522,6 +545,7 @@
     $("loadFile").value="";
   });
   document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
+  document.querySelectorAll("[data-source]").forEach(b=>b.addEventListener("click",()=>setSourceMode(b.dataset.source)));
   $("addBatchBtn").addEventListener("click",addBatchItem);
   $("batchTitle").addEventListener("input",sync);
   $("familyName").addEventListener("input",sync);
@@ -534,5 +558,5 @@
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
   window.NAF={markdown,request,batchRequest,parseNAFMarkdown,applyNAFRequest,loadMDFile,
-    setBatchMode,activityRule,getState:()=>({kind,mode,batchMode,batchCount:batchItems.length})};
+    setBatchMode,setSourceMode,activityRule,getState:()=>({kind,mode,batchMode,sourceMode,batchCount:batchItems.length})};
 })();
