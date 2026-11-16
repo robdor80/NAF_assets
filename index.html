@@ -44,8 +44,17 @@
 
       <div class="workspace">
         <div class="editor">
+          <section class="panel" aria-labelledby="workflow-heading">
+            <div class="panel-heading"><span class="step">01</span><h2 id="workflow-heading">¿Qué quieres crear?</h2></div>
+            <div class="workflow-modes" role="group" aria-label="Modo de solicitud">
+              <button type="button" class="workflow-mode is-active" data-workflow="single" aria-pressed="true"><strong>Imagen única</strong><span>Un recurso y un .md</span></button>
+              <button type="button" class="workflow-mode" data-workflow="variant" aria-pressed="false"><strong>Variante</strong><span>Mismo lugar, otro ambiente</span></button>
+              <button type="button" class="workflow-mode" data-workflow="lot" aria-pressed="false"><strong>Lote</strong><span>Varios .md relacionados</span></button>
+            </div>
+          </section>
+
           <section class="panel" aria-labelledby="type-heading">
-            <div class="panel-heading"><span class="step">01</span><h2 id="type-heading">Tipo de recurso</h2></div>
+            <div class="panel-heading"><span class="step">02</span><h2 id="type-heading">Tipo de recurso</h2></div>
             <div class="kind-selector" id="kindSelector" role="group" aria-label="Tipo de recurso">
               <button type="button" class="kind-card is-active" data-kind="exterior" aria-pressed="true">
                 <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="m5 36 12-16 9 10 7-14 10 20H5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="35" cy="9" r="4" stroke="currentColor" stroke-width="2"/><path d="M7 41h34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -62,29 +71,33 @@
             </div>
 
             <div class="subsection">
-              <div class="field-title">¿Quieres recuperar una solicitud anterior?</div>
+              <div class="field-title">¿Tienes una solicitud .md anterior?</div>
               <div class="import-row">
                 <button id="loadBtn" type="button" class="btn btn-secondary import-btn"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 17v3h16v-3M12 17V4m0 0-4 4m4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Cargar solicitud .md</button>
-                <input type="file" id="loadFile" accept=".md,text/markdown,text/plain" class="file-input" aria-label="Seleccionar solicitud NAF en formato Markdown">
-                <small>Abre un .md creado por NAF, cambia lo que quieras y descárgalo de nuevo.</small>
+                <input type="file" id="loadFile" accept=".md,text/markdown,text/plain" class="file-input" hidden aria-label="Seleccionar solicitud NAF en formato Markdown">
+                <small>Recupera los datos de una imagen anterior; especialmente útil antes de crear una variante.</small>
               </div>
             </div>
-            <div class="subsection" id="identitySection">
-              <div class="field-title">¿Qué quieres hacer con la imagen?</div>
-              <div class="pill-switch" id="modeSelector" role="group" aria-label="Identidad del recurso">
-                <button type="button" class="is-active" data-mode="new" aria-pressed="true">Nueva imagen</button>
-                <button type="button" data-mode="variant" aria-pressed="false">Variar imagen NAP</button>
+            <div class="subsection is-hidden" id="variantPanel">
+              <div class="field-title">Variar una imagen que ya existe</div>
+              <div id="referenceWrap" class="field reference-wrap">
+                <label for="referenceId">Pega el ID de la imagen original <span class="required">*</span></label>
+                <input id="referenceId" type="text" placeholder="scene_valrik_aldea_001" autocomplete="off" spellcheck="false" maxlength="96">
+                <small>Este ID es el que ChatGPT te dio junto al PNG, no el nombre del archivo .md.</small>
               </div>
-              <div id="referenceWrap" class="field reference-wrap is-hidden">
-                <label for="referenceId">ID de la imagen original <span class="required">*</span></label>
-                <input id="referenceId" type="text" placeholder="scene_treskal_tavern_interior_001" autocomplete="off" spellcheck="false">
-                <small><strong>Pega aquí el ID que te entregué al aprobar la imagen.</strong> Después carga su .md y modifica el clima. Para conservar la misma aldea también necesitaré su PNG original (adjúntalo en ChatGPT si ya no está accesible).</small>
+              <div class="field">
+                <label for="referenceImageFile">PNG original (opcional aquí, necesario en ChatGPT)</label>
+                <input id="referenceImageFile" type="file" accept="image/png,.png" hidden>
+                <button id="referenceImageBtn" type="button" class="btn btn-secondary btn-small">Elegir PNG para visualizarlo</button>
+                <small id="referenceImageStatus">También tendrás que adjuntar el PNG original en ChatGPT: el .md no contiene sus píxeles.</small>
+                <img id="referenceImagePreview" class="reference-image-preview is-hidden" alt="Vista previa local del PNG original">
               </div>
+              <p class="batch-guidance">Mantendremos edificios, perspectiva e identidad de la imagen base, cambiando solo lo indicado. Con lluvia intensa o nieve se adaptará también la actividad de personas y animales.</p>
             </div>
           </section>
 
           <section class="panel" aria-labelledby="place-heading">
-            <div class="panel-heading"><span class="step">02</span><h2 id="place-heading">Dónde sucede</h2></div>
+            <div class="panel-heading"><span class="step">03</span><h2 id="place-heading">Dónde sucede</h2></div>
             <div class="field-grid grid-two">
               <div class="field">
                 <label for="house">Territorio / casa</label>
@@ -117,7 +130,7 @@
           </section>
 
           <section class="panel" aria-labelledby="context-heading">
-            <div class="panel-heading"><span class="step">03</span><h2 id="context-heading">Ambiente y detalles</h2></div>
+            <div class="panel-heading"><span class="step">04</span><h2 id="context-heading">Ambiente y detalles</h2></div>
             <div class="field-grid grid-three" id="atmosphereFields">
               <div class="field">
                 <label for="time">Momento del día</label>
@@ -191,7 +204,7 @@
           </section>
 
           <section class="panel panel-compact" aria-labelledby="bibles-heading">
-            <div class="panel-heading"><span class="step">04</span><h2 id="bibles-heading">Biblias visuales</h2></div>
+            <div class="panel-heading"><span class="step">05</span><h2 id="bibles-heading">Biblias visuales</h2></div>
             <div class="bible-head">
               <div><strong>Selección automática</strong><p>Aplicaremos las biblias oficiales que correspondan, sin inventar canon.</p></div>
               <label class="toggle" title="Activar selección manual de biblias"><input type="checkbox" id="manualBibles"><span class="toggle-track"></span><span class="sr-only">Elegir biblias manualmente</span></label>
@@ -202,48 +215,40 @@
             </div>
           </section>
 
-          <section class="panel" aria-labelledby="batch-heading">
-            <div class="panel-heading"><span class="step">05</span><h2 id="batch-heading">Producción por lotes</h2></div>
-            <div class="field-title">¿Cuántas imágenes quieres encargar?</div>
-            <div class="batch-modes" role="group" aria-label="Modo de producción">
-              <button type="button" class="batch-mode is-active" data-batch="single" aria-pressed="true"><strong>Una imagen</strong><span>Encargo individual</span></button>
-              <button type="button" class="batch-mode" data-batch="variants" aria-pressed="false"><strong>Misma escena</strong><span>Variantes de clima o luz</span></button>
-              <button type="button" class="batch-mode" data-batch="distinct" aria-pressed="false"><strong>Imágenes distintas</strong><span>Varias tabernas, aldeas…</span></button>
+          <section id="lotPanel" class="panel is-hidden" aria-labelledby="batch-heading">
+            <div class="panel-heading"><span class="step">06</span><h2 id="batch-heading">Preparar un lote</h2></div>
+            <p class="batch-guidance">Escoge cuántos recursos del mismo tema necesitas. NAF te entregará un <strong>ZIP de archivos .md</strong>, uno por imagen, para enviármelos de uno en uno. No son ZIP de NAP.</p>
+            <div class="pill-switch lot-type-switch" role="group" aria-label="Tipo de lote">
+              <button type="button" data-lot-type="independent" class="is-active" aria-pressed="true">Lugares diferentes</button>
+              <button type="button" data-lot-type="views" aria-pressed="false">Vistas del mismo lugar</button>
             </div>
-            <div id="batchPanel" class="batch-panel is-hidden">
-              <div id="batchSourceWrap" class="batch-source">
-                <div class="field-title">¿Cuál es la imagen base de estas variantes?</div>
-                <div class="pill-switch" role="group" aria-label="Origen visual de las variantes">
-                  <button type="button" data-source="new" class="is-active" aria-pressed="true">Crear imagen base</button>
-                  <button type="button" data-source="existing" aria-pressed="false">Usar imagen aprobada</button>
-                </div>
-                <small id="batchSourceHint">La primera imagen será la base. Tras aprobarla y obtener su ID, se producirán las siguientes.</small>
-                <label id="externalPngWrap" class="batch-png-confirm is-hidden"><input type="checkbox" id="externalPngAvailable"> Tengo el PNG original accesible para ChatGPT</label>
+            <div class="field-grid grid-two lot-fields">
+              <div class="field">
+                <label for="lotCount">Número de imágenes</label>
+                <select id="lotCount">
+                  <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                  <option value="5" selected>5</option><option value="6">6</option><option value="7">7</option>
+                  <option value="8">8</option><option value="9">9</option><option value="10">10</option>
+                  <option value="11">11</option><option value="12">12</option>
+                </select>
               </div>
-              <div class="field-grid grid-two">
-                <div class="field">
-                  <label for="batchTitle">Nombre del lote (solo organizativo)</label>
-                  <input id="batchTitle" type="text" maxlength="100" placeholder="Ej.: Aldea de Valrik · 4 climas">
-                </div>
-                <div class="field" id="familyWrap">
-                  <label for="familyName">Familia visual (opcional)</label>
-                  <input id="familyName" type="text" maxlength="80" placeholder="Ej.: Aldea estándar Valrik">
-                  <small>Las variantes compartirán una familia visual, sin bautizar la aldea dentro de CoreRPG.</small>
-                </div>
+              <div class="field" id="lotVariationWrap">
+                <label for="lotVariation">Diferencias entre imágenes</label>
+                <select id="lotVariation">
+                  <option value="subtle">Suaves</option>
+                  <option value="balanced" selected>Equilibradas</option>
+                  <option value="high">Marcadas, dentro del canon</option>
+                </select>
               </div>
-              <p class="batch-guidance" id="batchHelp"></p>
-              <div class="batch-items-head">
-                <strong>Imágenes del lote <span id="batchCount">3</span></strong>
-                <button id="addBatchBtn" type="button" class="btn btn-quiet btn-small">+ Añadir imagen</button>
-              </div>
-              <div id="batchItems" class="batch-items" aria-live="polite"></div>
-              <small class="batch-footnote">Máximo 12 imágenes. Se revisan de una en una: primero el PNG, después tu aprobación, el ID definitivo y el ZIP individual. El seguimiento es manual y se guarda en este navegador.</small>
-              <div class="batch-tracker-help">
-                <strong>06 · Seguimiento del lote</strong>
-                <p>En cada tarjeta puedes cambiar el estado, anotar el ID definitivo y descargar solo esa solicitud. «Descargar lote .md» guarda también el seguimiento para continuar en otro dispositivo.</p>
-                <p id="batchProgress" role="status" aria-live="polite">0 de 3 imágenes completadas.</p>
+              <div class="field lot-label-field">
+                <label for="lotTitle">Nombre del lote (opcional)</label>
+                <input id="lotTitle" type="text" maxlength="100" placeholder="Ej.: 5 posadas de Treskal">
               </div>
             </div>
+            <p id="lotGuidance" class="batch-guidance"></p>
+            <div class="lot-list-heading">Archivos .md que se prepararán</div>
+            <div id="lotItems" class="simple-lot-items" aria-live="polite"></div>
+            <small class="batch-footnote">En «Vistas del mismo lugar», la primera vista es panorámica elevada a 45°. Para las siguientes, adjunta a ChatGPT la panorámica aprobada y las imágenes previas que ayuden a mantener la misma arquitectura.</small>
           </section>
         </div>
 
@@ -267,12 +272,12 @@
               <button id="downloadBtn" type="button" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="downloadLabel">Descargar solicitud .md</span></button>
               <button id="copyBtn" type="button" class="btn btn-secondary">Copiar texto</button>
             </div>
-            <p class="preview-help">Entrega el <strong>.md</strong> en ChatGPT. Primero generaré las imágenes para que las apruebes; después asignaré sus ID definitivos y crearé un ZIP independiente por cada imagen aprobada.</p>
+            <p class="preview-help">Envía cada <strong>.md</strong> a ChatGPT. Obtendrás primero un PNG con ID provisional copiable; después de tu aprobación, su ZIP NAP. Un rechazo exige otro PNG y otro ID.</p>
             <p id="status" role="status" aria-live="polite"></p>
           </div>
         </aside>
       </div>
-      <footer class="footer"><span>NAF · Nexus Asset Forge</span><span>Solicitud local · Sin cuenta ni servidor</span></footer>
+      <footer class="footer"><span>NAF · Nexus Asset Forge</span><span>Solicitudes .md locales · Sin cuenta ni servidor</span></footer>
     </main>
   </div>
   <script src="./app.js" defer></script>
