@@ -1,6 +1,25 @@
 # NAF assets — Nexus Asset Forge
 
-**NAF v0.3** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
+**NAF v0.4** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
+
+## NAF v0.4 — Producción secuencial y seguimiento del lote
+
+NAF sigue siendo un planificador local de solicitudes `.md`, NO genera PNG ni ZIP. Un lote puede contener hasta 12 imágenes, pero la producción se hace **de una en una**.
+
+Cada tarjeta del bloque 05/06 permite:
+- **Descargar esta imagen .md** o **Copiar solicitud**: emite un único encargo con su posición, `batch_id`, `visual_family_id`, identidad visual, meteorología e instrucciones de NPC/animales. No solicita imágenes adicionales.
+- Cambiar su estado manual: **Pendiente, En preparación, PNG generado, Aprobada, Descartada, ZIP entregado**. Para aprobar se confirma que el PNG está disponible; para marcar ZIP entregado se exige aprobación previa, PNG y un ID definitivo válido y único.
+- Pegar **ID definitivo tras aprobación**, proporcionado por ChatGPT. NAF no infiere el ID a partir del nombre del `.md`.
+- Marcar **PNG disponible para ChatGPT**, una confirmación del autor, no una subida. Para una variante fiel, el PNG original debe estar accesible en ChatGPT o adjuntarse de nuevo.
+- Consultar el progreso de aprobaciones y ZIP entregados. Los estados son declaraciones locales del autor y no implican verificación real de NAP.
+
+**Dependencias:** cuando el lote crea una imagen base nueva, sus variantes quedan bloqueadas hasta que la base esté aprobada, tenga ID real y PNG disponible. Al emitir el `.md` individual de la variante se introduce el ID de la base, sin inventarlo. Si se usa una imagen anterior, se debe pegar su ID y confirmar el PNG original.
+
+**Continuidad:** se conserva el seguimiento al alternar de lote a una imagen individual y regresar. Cambiar tipo de lote o procedencia con producción iniciada requiere confirmación porque puede reiniciar el progreso. Se protege el ID de una base con variantes ya iniciadas.
+
+**Recuperación:** **Guardar lote y seguimiento .md** incluye el plan y los campos `progress.status`, `progress.asset_id`, `progress.png_available` y el indicador del PNG de origen. Puede abrirse con **Cargar solicitud .md** en MSI, tablet o móvil. Los borradores siguen en almacenamiento local por dispositivo. Los `.md` antiguos de NAF siguen siendo compatibles.
+
+Flujo oficial: **PNG individual → revisión del autor → aprobación explícita → ID copiable → ZIP individual de cinco archivos**. Ni NAF ni el nuevo seguimiento modifican Manifest v2, rutas NAP, CoreRPG o canon.
 
 ## NAF v0.3 — Lotes, familias y variantes aprobadas
 
