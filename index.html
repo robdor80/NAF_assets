@@ -218,6 +218,7 @@
                   <button type="button" data-source="existing" aria-pressed="false">Usar imagen aprobada</button>
                 </div>
                 <small id="batchSourceHint">La primera imagen será la base. Tras aprobarla y obtener su ID, se producirán las siguientes.</small>
+                <label id="externalPngWrap" class="batch-png-confirm is-hidden"><input type="checkbox" id="externalPngAvailable"> Tengo el PNG original accesible para ChatGPT</label>
               </div>
               <div class="field-grid grid-two">
                 <div class="field">
@@ -236,7 +237,12 @@
                 <button id="addBatchBtn" type="button" class="btn btn-quiet btn-small">+ Añadir imagen</button>
               </div>
               <div id="batchItems" class="batch-items" aria-live="polite"></div>
-              <small class="batch-footnote">Máximo 12 imágenes por encargo. Cada imagen se revisa y aprueba por separado; solo entonces se crea su ZIP de NAP.</small>
+              <small class="batch-footnote">Máximo 12 imágenes. Se revisan de una en una: primero el PNG, después tu aprobación, el ID definitivo y el ZIP individual. El seguimiento es manual y se guarda en este navegador.</small>
+              <div class="batch-tracker-help">
+                <strong>06 · Seguimiento del lote</strong>
+                <p>En cada tarjeta puedes cambiar el estado, anotar el ID definitivo y descargar solo esa solicitud. «Descargar lote .md» guarda también el seguimiento para continuar en otro dispositivo.</p>
+                <p id="batchProgress" role="status" aria-live="polite">0 de 3 imágenes completadas.</p>
+              </div>
             </div>
           </section>
         </div>
