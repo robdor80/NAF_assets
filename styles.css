@@ -112,3 +112,20 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .batch-source .pill-switch{max-width:100%}
 .batch-source small{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:10px}
 @media(max-width:390px){.batch-source{padding:12px}.batch-source .pill-switch button{padding:7px 4px;font-size:11px}}
+
+/* NAF v0.4 — seguimiento de producción individual */
+.batch-tracker{border-top:1px solid var(--border);margin-top:14px;padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.batch-tracker-fields{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:10px}
+.batch-tracker .field label{font-size:11px}
+.batch-tracker .field input,.batch-tracker .field select{min-width:0;width:100%;font-size:12px;min-height:43px}
+.batch-png-confirm{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.4;color:var(--muted);cursor:pointer}
+.batch-png-confirm input{width:18px;height:18px;flex:none;accent-color:var(--teal)}
+.batch-source>.batch-png-confirm{margin-top:13px}
+.batch-item-hint{font-size:11px;line-height:1.5;color:var(--muted);margin:0}
+.batch-item-actions{display:flex;flex-wrap:wrap;gap:8px}
+.batch-item-actions button{flex:1 1 145px;white-space:normal}
+.batch-item-actions button:disabled{cursor:not-allowed;opacity:.45}
+.batch-tracker-help{border:1px solid var(--border);border-radius:12px;background:rgba(2,11,16,.25);padding:15px;margin-top:17px}
+.batch-tracker-help strong{font-size:13px;color:var(--teal)}.batch-tracker-help p{font-size:11px;line-height:1.65;color:var(--muted);margin:7px 0 0}
+#batchProgress{font-weight:750}
+@media(max-width:699px){.batch-tracker-fields{grid-template-columns:1fr}.batch-tracker{margin-top:12px;padding-top:12px}.batch-item-actions{display:flex;flex-direction:column}.batch-item-actions button{flex:auto;width:100%}}
