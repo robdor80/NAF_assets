@@ -31,6 +31,7 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
+  let batchMode="single",batchItems=[],batchId="";
   function slug(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
   function addOpt(v,t){const x=document.createElement("option");x.value=v;x.textContent=t;return x;}
   function fill(id,choices,preferred){$(id).replaceChildren(...choices.map(x=>addOpt(x[0],x[1])));if(choices.some(x=>x[0]===preferred))$(id).value=preferred;}
@@ -100,13 +101,17 @@
     $("summaryPlace").textContent=placeName()||"Pendiente";
     $("summarySubject").textContent=focusName()||"Pendiente";
     $("summaryMode").textContent=mode==="new"?"Nueva":"Variante";
+    $("summaryBatch").textContent=batchMode==="single"?"1 imagen":batchItems.length+(batchMode==="variants"?" variantes":" imágenes distintas");
+    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Descargar lote .md";
     $("summaryFormat").textContent=kind==="portrait"?"4:5 · 768 × 960":"16:9 · 1920 × 1080";
     $("previewType").textContent=kind==="portrait"?"RETRATO":kind==="interior"?"ESCENA INTERIOR":"ESCENA EXTERIOR";
     $("previewGlyph").textContent=kind==="portrait"?"◉":kind==="interior"?"▣":"◇";
     $("status").textContent="";$("status").classList.remove("is-error");save();
   }
   function save(){
-    const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual]};fields.forEach(x=>o[x]=$(x).value);
+    const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual],
+      batchMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
+    fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
   function restore(o){
@@ -116,6 +121,11 @@
     fields.filter(x=>!["house","place","subject"].includes(x)).forEach(x=>{if(typeof o[x]==="string")$(x).value=o[x];});
     if(o.mode==="variant")setMode("variant");
     $("manualBibles").checked=!!o.manualOn;manual=new Set(Array.isArray(o.manual)?o.manual.filter(x=>bib.some(b=>b[0]===x)):[]);
+    $("batchTitle").value=String(o.batchTitle||"").slice(0,100);
+    $("familyName").value=String(o.familyName||"").slice(0,80);
+    batchId=typeof o.batchId==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(o.batchId)?o.batchId:"";
+    batchItems=Array.isArray(o.batchItems)?o.batchItems.slice(0,12).map(normalizeBatchItem):[];
+    setBatchMode(["variants","distinct"].includes(o.batchMode)?o.batchMode:"single",false);
     renderBibles();sync();
   }
 
@@ -126,6 +136,15 @@
     if(!match)throw Error("No encuentro el bloque JSON de una solicitud NAF. Selecciona el .md descargado desde NAF.");
     let data;
     try{data=JSON.parse(match[1]);}catch(e){throw Error("El JSON de la solicitud NAF está dañado.");}
+    if(data?.naf_batch_schema_version===1&&data.kind==="lote_de_solicitudes_no_paquete_nap"){
+      if(data.universe_id!=="nimroel"||!["variants","distinct"].includes(data.batch?.mode)||
+        !Array.isArray(data.items)||data.items.length<2||data.items.length>12||
+        data.base?.kind!=="solicitud_no_paquete_nap"||!houses[data.base?.geography?.house]||
+        !data.base?.appearance||!data.base?.focus||!data.base?.nap_output||
+        (data.batch.mode==="variants"&&!validId.test(data.base.reference_asset_id||"")))
+        throw Error("El lote NAF no es válido (máximo 12 imágenes).");
+      return data;
+    }
     if(!data||data.naf_schema_version!==1||data.kind!=="solicitud_no_paquete_nap"||data.universe_id!=="nimroel"||
        !["exterior","interior","portrait"].includes(data.category)||!houses[data.geography?.house]||
        !data.focus||typeof data.focus.key!=="string"||!data.appearance||!data.nap_output)
@@ -141,6 +160,15 @@
     if(target)el.value=target.value;
   }
   function applyNAFRequest(data){
+    if(data.naf_batch_schema_version===1){
+      applyNAFRequest(data.base);
+      $("batchTitle").value=String(data.batch.title||"").slice(0,100);
+      $("familyName").value=String(data.batch.family_label||"").slice(0,80);
+      batchId=typeof data.batch.id==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(data.batch.id)?data.batch.id:"";
+      batchItems=data.items.map(i=>normalizeBatchItem(i)).slice(0,12);
+      setBatchMode(data.batch.mode,false);sync();
+      return;
+    }
     // Validado antes de tocar el borrador visible. Los campos desconocidos no se ejecutan.
     const geo=data.geography;
     const house=geo.house;
@@ -180,6 +208,7 @@
     const paths=Array.isArray(data.visual_bibles?.paths)?data.visual_bibles.paths:[];
     manual=new Set(bib.filter(b=>paths.includes(root+b[2])).map(b=>b[0]));
     $("manualBibles").checked=data.visual_bibles?.mode==="seleccion_manual_aditiva";
+    setBatchMode("single",false);
     renderBibles();
     sync(); // Actualiza resumen y guarda el borrador importado.
   }
@@ -230,6 +259,10 @@
         portrait_sex:portrait?($("portraitSex").value==="other"?$("customSex").value.trim():label("portraitSex")):null,
         portrait_age:portrait?$("portraitAge").value.trim()||null:null},
       free_description:$("notes").value.trim(),
+      visual_production:{reference_asset_id:mode==="variant"?ref:null,
+        same_visual_identity:mode==="variant",original_png_required:mode==="variant",
+        activity_coherence:activityRule(kind,$("weather").value,$("time").value),
+        approval:"author_review_before_definitive_id_and_nap_zip"},
       visual_bibles:{mode:$("manualBibles").checked?"seleccion_manual_aditiva":"seleccion_automatica",
         paths:selectedBibles().map(id=>root+bib.find(b=>b[0]===id)[2])},
       nap_output:{manifest_version:2,classification,master_size:portrait?[768,960]:[1920,1080],
@@ -238,6 +271,7 @@
     };
   }
   function markdown(){
+    if(batchMode!=="single")return batchMarkdown();
     const r=request(),title=r.category==="portrait"?"Retrato":r.category==="interior"?"Escena interior":"Escena exterior";
     const lines=[
       "# NAF — Solicitud de "+title,"","> Solicitud para ChatGPT. NO es un ZIP ni un manifest listo para importar en NAP.","",
@@ -255,6 +289,10 @@
       ...r.visual_bibles.paths.map(x=>"- "+x),"",
       "## Solicitud estructurada","",
       "~~~json",JSON.stringify(r,null,2),"~~~","",
+      "## Continuidad, actividad y aprobación","",
+      "- "+r.visual_production.activity_coherence,
+      "- Si es variante, el ID original NO contiene la imagen: comprobar que el PNG original está accesible; si no, pedirlo. Mantener edificios, camino y encuadre.",
+      "- Primero generar PNG y solicitar valoración del autor. Solo después de aprobación explícita, comunicar ID final copiable y generar un ZIP por imagen.","",
       "## Obligaciones de producción para ChatGPT","",
       "1. Verificar en GitHub las biblias indicadas, el canon del territorio y las referencias visuales aplicables. No inventar canon. En imágenes genéricas, nunca asignar un nombre ni un plano fijo al asentamiento procedural.",
       "2. Crear un prompt de generación completo y la imagen PNG maestra con proporción exacta y realismo cinematográfico naturalista.",
@@ -276,7 +314,8 @@
   function status(message,error){$("status").textContent=message;$("status").classList.toggle("is-error",!!error);}
   function download(){
     try{
-      const text=markdown(),name="naf_"+kind+"_"+$("house").value+"_"+new Date().toISOString().replace(/[:.]/g,"-")+".md";
+      const text=markdown(),name=(batchMode==="single"?"naf_"+kind+"_"+$("house").value:"naf_lote_"+$("house").value)+
+        "_"+new Date().toISOString().replace(/[:.]/g,"-")+".md";
       const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
       const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),10000);status("Solicitud preparada: "+name,false);
@@ -300,7 +339,9 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    setHouse("procedural");setKind("exterior");setMode("new");document.querySelector(".advanced").open=false;sync();
+    batchMode="single";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
+    document.querySelector(".advanced").open=false;sync();
   }
   document.querySelectorAll("[data-kind]").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
   document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
@@ -318,6 +359,10 @@
     await loadMDFile(file);
     $("loadFile").value="";
   });
+  document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
+  $("addBatchBtn").addEventListener("click",addBatchItem);
+  $("batchTitle").addEventListener("input",sync);
+  $("familyName").addEventListener("input",sync);
   $("downloadBtn").addEventListener("click",download);
   $("copyBtn").addEventListener("click",copy);
   $("resetBtn").addEventListener("click",reset);
@@ -326,5 +371,6 @@
   try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,parseNAFMarkdown,applyNAFRequest,loadMDFile,getState:()=>({kind,mode})};
+  window.NAF={markdown,request,batchRequest,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+    setBatchMode,activityRule,getState:()=>({kind,mode,batchMode,batchCount:batchItems.length})};
 })();
