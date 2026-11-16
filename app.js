@@ -311,7 +311,7 @@
   function setBatchMode(value,resetItems=true){
     const chosen=["variants","distinct"].includes(value)?value:"single";
     const changed=chosen!==batchMode;batchMode=chosen;
-    if(changed&&batchMode==="variants")sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
+    if(changed&&batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
     if(batchMode!=="single"){
       if(!batchId)batchId=newBatchId();
       if(resetItems&&changed||batchItems.length<2)
@@ -326,11 +326,16 @@
   }
   function setSourceMode(value){
     if(batchMode!=="variants")return;
+    const previous=sourceMode;
     sourceMode=value==="existing"?"existing":"new";
+    const defaults={new:["despejado","lluvia_intensa","nieve"],existing:["lluvia_suave","lluvia_intensa","nieve"]};
+    batchItems=batchItems.map((item,i)=>{
+      const untouched=item.weather===defaults[previous][i%3]&&item.time==="auto"&&item.season==="auto"&&!item.notes;
+      return untouched?{...item,weather:defaults[sourceMode][i%3]}:item;
+    });
     setMode(sourceMode==="existing"?"variant":"new");
     document.querySelectorAll("[data-mode]").forEach(button=>{button.disabled=
       sourceMode==="existing"?button.dataset.mode==="new":button.dataset.mode==="variant";});
-    batchItems=[0,1,2].map(i=>defaultBatchItem(i,"variants"));
     renderBatch();sync();
   }
   function addBatchItem(){
