@@ -31,7 +31,7 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
-  let batchMode="single",batchItems=[],batchId="",sourceMode="new",externalPngAvailable=false;
+  let batchMode="single",lastActiveBatchMode="single",batchItems=[],batchId="",sourceMode="new",externalPngAvailable=false;
   const progressStates=["pending","in_preparation","png_generated","approved","rejected","zip_delivered"];
   const progressLabels={pending:"Pendiente",in_preparation:"En preparación",png_generated:"PNG generado",
     approved:"Aprobada",rejected:"Descartada",zip_delivered:"ZIP entregado"};
@@ -100,6 +100,8 @@
     $("customPlaceWrap").classList.toggle("is-hidden",$("place").value!=="other");
     $("customSubjectWrap").classList.toggle("is-hidden",$("subject").value!=="other");
     $("customSexWrap").classList.toggle("is-hidden",kind!=="portrait"||$("portraitSex").value!=="other");
+    $("referenceId").disabled=batchMode==="variants"&&sourceMode==="existing"&&
+      batchItems.some(x=>x.progress?.status!=="pending");
     $("summaryHouse").textContent=houses[$("house").value][0];
     $("summaryPlace").textContent=placeName()||"Pendiente";
     $("summarySubject").textContent=focusName()||"Pendiente";
@@ -369,12 +371,20 @@
   }
   function setBatchMode(value,resetItems=true){
     const chosen=["variants","distinct"].includes(value)?value:"single";
-    const changed=chosen!==batchMode;batchMode=chosen;
-    if(changed&&batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
+    const typeChanged=chosen!=="single"&&lastActiveBatchMode!=="single"&&chosen!==lastActiveBatchMode;
+    if(typeChanged&&resetItems&&batchItems.some(x=>x.progress?.status!=="pending")&&
+       !confirm("Cambiar el tipo de lote reiniciará el seguimiento actual. ¿Continuar?"))return;
+    batchMode=chosen;
     if(batchMode!=="single"){
+      if(typeChanged&&resetItems){
+        batchItems=[];batchId=newBatchId();externalPngAvailable=false;
+      }
       if(!batchId)batchId=newBatchId();
-      if(resetItems&&changed||batchItems.length<2)
+      if(batchItems.length<2){
+        if(batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
         batchItems=[0,1,2].map(i=>defaultBatchItem(i,batchMode));
+      }
+      lastActiveBatchMode=batchMode;
       setMode(batchMode==="variants"&&sourceMode==="existing"?"variant":"new");
     }
     document.querySelectorAll("[data-mode]").forEach(button=>{
@@ -386,7 +396,12 @@
   function setSourceMode(value){
     if(batchMode!=="variants")return;
     const previous=sourceMode;
-    sourceMode=value==="existing"?"existing":"new";
+    const chosen=value==="existing"?"existing":"new";
+    if(chosen===previous)return;
+    const started=batchItems.some(x=>x.progress?.status!=="pending");
+    if(started&&!confirm("Cambiar la imagen base reiniciará el seguimiento de este lote. ¿Continuar?"))return;
+    sourceMode=chosen;
+    if(started)batchItems=batchItems.map(item=>({...item,progress:{status:"pending",asset_id:"",png_available:false}}));
     externalPngAvailable=false;
     const defaults={new:["despejado","lluvia_intensa","nieve"],existing:["lluvia_suave","lluvia_intensa","nieve"]};
     batchItems=batchItems.map((item,i)=>{
@@ -734,7 +749,7 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    batchMode="single";sourceMode="new";externalPngAvailable=false;batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    batchMode="single";lastActiveBatchMode="single";sourceMode="new";externalPngAvailable=false;batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
     setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
     document.querySelector(".advanced").open=false;sync();
   }
@@ -757,6 +772,7 @@
   document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
   document.querySelectorAll("[data-source]").forEach(b=>b.addEventListener("click",()=>setSourceMode(b.dataset.source)));
   $("addBatchBtn").addEventListener("click",addBatchItem);
+  $("referenceId").addEventListener("change",()=>{renderBatch();sync();});
   $("externalPngAvailable").addEventListener("change",()=>{
     externalPngAvailable=$("externalPngAvailable").checked;renderBatch();sync();
   });
