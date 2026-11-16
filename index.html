@@ -69,16 +69,16 @@
                 <small>Abre un .md creado por NAF, cambia lo que quieras y descárgalo de nuevo.</small>
               </div>
             </div>
-            <div class="subsection">
+            <div class="subsection" id="identitySection">
               <div class="field-title">¿Qué quieres hacer con la imagen?</div>
               <div class="pill-switch" id="modeSelector" role="group" aria-label="Identidad del recurso">
                 <button type="button" class="is-active" data-mode="new" aria-pressed="true">Nueva imagen</button>
                 <button type="button" data-mode="variant" aria-pressed="false">Variar imagen NAP</button>
               </div>
               <div id="referenceWrap" class="field reference-wrap is-hidden">
-                <label for="referenceId">ID de referencia del recurso existente <span class="required">*</span></label>
+                <label for="referenceId">ID de la imagen original <span class="required">*</span></label>
                 <input id="referenceId" type="text" placeholder="scene_treskal_tavern_interior_001" autocomplete="off" spellcheck="false">
-                <small>Introduce el ID de la <strong>imagen generada</strong> (por ejemplo, scene_valrik_aldea_001), no el nombre del .md. Para editar un .md utiliza «Cargar solicitud».</small>
+                <small><strong>Pega aquí el ID que te entregué al aprobar la imagen.</strong> Después carga su .md y modifica el clima. Para conservar la misma aldea también necesitaré su PNG original (adjúntalo en ChatGPT si ya no está accesible).</small>
               </div>
             </div>
           </section>
@@ -201,6 +201,36 @@
               <div id="biblesList" class="bibles-list"></div>
             </div>
           </section>
+
+          <section class="panel" aria-labelledby="batch-heading">
+            <div class="panel-heading"><span class="step">05</span><h2 id="batch-heading">Producción por lotes</h2></div>
+            <div class="field-title">¿Cuántas imágenes quieres encargar?</div>
+            <div class="batch-modes" role="group" aria-label="Modo de producción">
+              <button type="button" class="batch-mode is-active" data-batch="single" aria-pressed="true"><strong>Una imagen</strong><span>Encargo individual</span></button>
+              <button type="button" class="batch-mode" data-batch="variants" aria-pressed="false"><strong>Misma escena</strong><span>Variantes de clima o luz</span></button>
+              <button type="button" class="batch-mode" data-batch="distinct" aria-pressed="false"><strong>Imágenes distintas</strong><span>Varias tabernas, aldeas…</span></button>
+            </div>
+            <div id="batchPanel" class="batch-panel is-hidden">
+              <div class="field-grid grid-two">
+                <div class="field">
+                  <label for="batchTitle">Nombre del lote (solo organizativo)</label>
+                  <input id="batchTitle" type="text" maxlength="100" placeholder="Ej.: Aldea de Valrik · 4 climas">
+                </div>
+                <div class="field" id="familyWrap">
+                  <label for="familyName">Familia visual (opcional)</label>
+                  <input id="familyName" type="text" maxlength="80" placeholder="Ej.: Aldea estándar Valrik">
+                  <small>Las variantes compartirán una familia visual, sin bautizar la aldea dentro de CoreRPG.</small>
+                </div>
+              </div>
+              <p class="batch-guidance" id="batchHelp"></p>
+              <div class="batch-items-head">
+                <strong>Imágenes del lote <span id="batchCount">3</span></strong>
+                <button id="addBatchBtn" type="button" class="btn btn-quiet btn-small">+ Añadir imagen</button>
+              </div>
+              <div id="batchItems" class="batch-items" aria-live="polite"></div>
+              <small class="batch-footnote">Máximo 12 imágenes por encargo. Cada imagen se revisa y aprueba por separado; solo entonces se crea su ZIP de NAP.</small>
+            </div>
+          </section>
         </div>
 
         <aside class="preview-panel" aria-labelledby="preview-heading">
@@ -216,13 +246,14 @@
               <div><dt>Lugar</dt><dd id="summaryPlace">Treskal</dd></div>
               <div><dt>Escenario</dt><dd id="summarySubject">Aldea</dd></div>
               <div><dt>Versión</dt><dd id="summaryMode">Nueva</dd></div>
+              <div><dt>Producción</dt><dd id="summaryBatch">1 imagen</dd></div>
               <div><dt>Formato NAP</dt><dd id="summaryFormat">16:9 · 1920 × 1080</dd></div>
             </dl>
             <div class="preview-actions">
-              <button id="downloadBtn" type="button" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Descargar solicitud .md</button>
+              <button id="downloadBtn" type="button" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="downloadLabel">Descargar solicitud .md</span></button>
               <button id="copyBtn" type="button" class="btn btn-secondary">Copiar texto</button>
             </div>
-            <p class="preview-help">Entrega el <strong>.md</strong> en ChatGPT: se generarán la imagen y el ZIP ajustados al protocolo de NAP.</p>
+            <p class="preview-help">Entrega el <strong>.md</strong> en ChatGPT. Primero generaré las imágenes para que las apruebes; después asignaré sus ID definitivos y crearé un ZIP independiente por cada imagen aprobada.</p>
             <p id="status" role="status" aria-live="polite"></p>
           </div>
         </aside>
