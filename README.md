@@ -1,6 +1,37 @@
 # NAF assets — Nexus Asset Forge
 
-**NAF v0.2** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
+**NAF v0.3** es una web estática RobStyle para preparar **solicitudes de generación de imágenes** del videojuego Nimroel RPG. Funciona en MSI (horizontal), Samsung Galaxy Tab S9+ (vertical y horizontal) y Realme GT Neo 2 (solo vertical). No requiere backend, claves de API ni Python.
+
+## NAF v0.3 — Lotes, familias y variantes aprobadas
+
+### Trabajo con un asset ya generado
+
+1. Cargar desde **NAF** el archivo `.md` original para recuperar el encargo.
+2. Elegir **Variar imagen NAP** y **pegar manualmente el ID real** entregado por ChatGPT tras la aprobación. El nombre del `.md` no sirve como ID del PNG.
+3. Ajustar clima, hora, estación o instrucciones. Descargar otro `.md` con `reference_asset_id`. La imagen original PNG debe estar disponible en la conversación o adjuntarse a ChatGPT: el ID no contiene los píxeles.
+4. ChatGPT genera primero el **PNG para revisión**. Solo tras la **aprobación expresa del autor** asigna/comunica el nuevo ID (para copiar) y entrega el **ZIP individual de NAP**. Nunca altera el ID de la imagen anterior.
+
+### Coherencia climática (regla de generación)
+
+En exteriores con **lluvia intensa, tormenta, nieve o ventisca**, la acción habitual de NPC y animales a la intemperie **NO** se copia desde una imagen despejada. Por defecto se despejan calles y caminos, salvo actividades imprescindibles, refugios y protecciones físicamente coherentes. Lluvia ligera reduce actividad desprotegida; noche cambia horarios y luces. En un **retrato** NO desaparece el personaje; en un **interior** la lluvia exterior NO vacía automáticamente una taberna. Se incluyen reglas específicas tanto en solicitudes individuales como en las de lote.
+
+### Lotes de hasta 12 imágenes
+
+En el bloque **05 — Producción por lotes**:
+
+- **Una imagen**: exporta una solicitud NAF individual compatible con `.md` antiguos.
+- **Misma escena**: es una *familia visual*. Se puede **crear la primera imagen base** y, tras aprobarla, generar las variantes; o **partir de una imagen aprobada**, pegando su ID. Cada variante puede seleccionar clima, hora, estación e instrucciones propias. Un `visual_family_id` solo agrupa visualmente, **no es un nombre de aldea CoreRPG**.
+- **Imágenes distintas**: produce escenas independientes (por ejemplo tres tabernas con arquitectura distinta), cada una con su propio `visual_family_id`; el `batch_id` solo relaciona el encargo común.
+- El `.md` exporta un **plan de lote completo** (bloque JSON `naf_batch_schema_version: 1`, `base` e `items`). Puede **recargarse y editarse** en NAF. Los lotes y campos se guardan localmente en el navegador.
+- **No se produce un ZIP multipaquete**. Cada imagen aprobada se empaqueta por separado con los cinco archivos válidos para NAP. Las pendientes/rechazadas no se importan ni generan registros SQLite.
+
+**Orden con base nueva:** imagen base → revisión del autor → aprobación → ID + ZIP de la base → variantes que referencian el ID y PNG de la base → revisión/ID/ZIP individual de cada variante. No se inventa un `reference_asset_id` provisional: en las variantes dependientes, `pending_reference_from_batch_position: 1` señala la dependencia.
+
+### Qué entiende NAP de los grupos
+
+El perfil vigente `robdor80/NAP/config/universes/nimroel/profile.json` determina el destino de escenas como `scenes/environment/<culture>/<location>/<asset_id>/` y de retratos como `portraits/<culture>/<location>/<role>/<sex>/<asset_id>/`. El nombre del ZIP coincide con el asset ID, pero **la clasificación para el enrutamiento procede del manifest**. Los datos de lote/familia/referencia solo deben ir en `_visual_identity.json` (y documentación auxiliar si procede), **nunca como claves raíz extra del manifest v2**. NAP puede conservar esos campos como rasgos, pero no se presume que implemente por sí mismo deduplicación de familias o jerarquías visuales.
+
+No hay API, sincronización entre dispositivos ni instalación de dependencias. Los borradores se guardan en el dispositivo donde se editan; pasar el `.md` entre dispositivos es explícito. Esta versión no genera imágenes ni ZIP desde el navegador.
 
 ## Actualización v0.2 — Nombres de CoreRPG y solicitudes reutilizables
 

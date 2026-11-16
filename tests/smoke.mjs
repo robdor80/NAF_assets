@@ -39,10 +39,12 @@ function app(storageOverride) {
   nodes.house.value="valrik";
   const kinds=["exterior","interior","portrait"].map(id=>{const b=fakeElement(id);b.dataset.kind=id;return b;});
   const modes=["new","variant"].map(id=>{const b=fakeElement(id);b.dataset.mode=id;return b;});
+  const batches=["single","variants","distinct"].map(id=>{const b=fakeElement(id);b.dataset.batch=id;return b;});
+  const sources=["new","existing"].map(id=>{const b=fakeElement(id);b.dataset.source=id;return b;});
   const advanced={open:false};
   const document={
     getElementById:id=>nodes[id],createElement:tag=>fakeElement(tag),
-    querySelectorAll:selector=>selector==="[data-kind]"?kinds:modes,
+    querySelectorAll:selector=>selector==="[data-kind]"?kinds:selector==="[data-mode]"?modes:selector==="[data-batch]"?batches:sources,
     querySelector:()=>advanced,body:{appendChild(){}}
   };
   const storage=storageOverride||new Map();
@@ -55,7 +57,7 @@ function app(storageOverride) {
     setTimeout(){},confirm:()=>true,Date
   };
   vm.runInNewContext(js,context,{filename:"app.js"});
-  return {api:window.NAF,nodes,kinds,modes,storage};
+  return {api:window.NAF,nodes,kinds,modes,batches,sources,storage};
 }
 test("interfaz, favicon y media queries para dispositivos",()=>{
   assert.match(html,/favicon\.svg/);
@@ -187,4 +189,115 @@ test("el borrador se recupera al volver a cargar la web",()=>{
   assert.equal(b.nodes.house.value,"edranor");
   assert.equal(b.nodes.notes.value,"Esto debe permanecer");
   assert.equal(b.nodes.place.value,"procedural");
+});
+
+test("identidad de variantes: referencia pegada de ChatGPT y PNG requerido",()=>{
+  const a=app();a.modes[1].dispatch("click");
+  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
+  const x=a.api.request();
+  assert.equal(x.reference_asset_id,"scene_valrik_aldea_1_approach_winter_morning_001");
+  assert.equal(x.visual_production.original_png_required,true);
+  assert.match(a.api.markdown(),/ID original NO contiene la imagen/);
+});
+test("meteo severa: no clona NPC ni animales a la intemperie",()=>{
+  const a=app();
+  a.nodes.weather.value="lluvia_intensa";
+  const rain=a.api.request();
+  assert.match(rain.visual_production.activity_coherence,/SIN NPC ni animales/);
+  assert.match(rain.visual_production.activity_coherence,/NO conservar las acciones/);
+  a.nodes.weather.value="nieve";
+  assert.match(a.api.request().visual_production.activity_coherence,/SIN NPC ni animales/);
+});
+test("lluvia en interior no elimina a los clientes ni a protagonista de retrato",()=>{
+  const a=app();
+  a.kinds[1].dispatch("click");
+  a.nodes.weather.value="lluvia_intensa";
+  assert.match(a.api.request().visual_production.activity_coherence,/NO vaciar automáticamente/);
+  a.kinds[2].dispatch("click");a.nodes.portraitSex.value="female";
+  assert.match(a.api.request().visual_production.activity_coherence,/NO eliminar al protagonista/);
+});
+test("lote de variantes: tres imágenes, una misma familia y mismo ID original",()=>{
+  const a=app();
+  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
+  a.batches[1].dispatch("click");
+  const out=a.api.batchRequest();
+  assert.equal(out.batch.mode,"variants");
+  assert.equal(out.items.length,3);
+  assert.equal(out.items[0].request.reference_asset_id,out.items[1].request.reference_asset_id);
+  assert.equal(out.items[0].request.visual_production.visual_family_id,out.items[1].request.visual_production.visual_family_id);
+  assert.equal(out.items[0].request.visual_production.original_png_required,true);
+  assert.match(a.api.markdown(),/esperar su APROBACIÓN/);
+});
+test("lote distinto: tres tabernas independientes, familias diferentes y sin referencia",()=>{
+  const a=app();a.kinds[1].dispatch("click");
+  a.nodes.subject.value="taberna";
+  a.batches[2].dispatch("click");
+  const out=a.api.batchRequest();
+  assert.equal(out.batch.mode,"distinct");
+  assert.equal(out.items.length,3);
+  assert.equal(out.items[0].request.identity_mode,"new");
+  assert.equal(out.items[0].request.reference_asset_id,null);
+  assert.ok(out.items[0].request.visual_production.visual_family_id!==out.items[1].request.visual_production.visual_family_id);
+  assert.match(a.api.markdown(),/identidad propia/);
+});
+test("los lotes se exportan, importan y restauran con ajustes por imagen",async()=>{
+  const a=app();
+  a.nodes.referenceId.value="scene_valrik_aldea_1_approach_winter_morning_001";
+  a.batches[1].dispatch("click");
+  a.nodes.batchTitle.value="Aldea con meteorología";
+  a.nodes.batchTitle.dispatch("input");
+  const source=a.api.markdown();
+  const b=app();
+  assert.equal(await b.api.loadMDFile({name:"lote.md",size:source.length,text:async()=>source}),true);
+  assert.equal(b.api.getState().batchMode,"variants");
+  assert.equal(b.api.batchRequest().items.length,3);
+  assert.equal(b.api.batchRequest().batch.title,"Aldea con meteorología");
+});
+test("persistencia del lote sin compartir datos entre dispositivos",()=>{
+  const storage=new Map(),a=app(storage);
+  a.batches[2].dispatch("click");
+  a.nodes.batchTitle.value="Tabernas independientes";
+  a.nodes.batchTitle.dispatch("input");
+  const b=app(storage);
+  assert.equal(b.api.getState().batchMode,"distinct");
+  assert.equal(b.api.getState().batchCount,3);
+  assert.equal(b.api.batchRequest().batch.title,"Tabernas independientes");
+});
+test("lote con ID nuevo propuesto se rechaza para evitar colisiones",()=>{
+  const a=app();
+  a.nodes.preferredId.value="scene_valrik_tavern_001";
+  a.batches[2].dispatch("click");
+  assert.throws(()=>a.api.batchRequest(),/deja vacío/);
+});
+
+
+test("lote nuevo sin ID: imagen base primero, variantes pendientes hasta aprobación",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  assert.equal(a.api.getState().sourceMode,"new");
+  const data=a.api.batchRequest();
+  assert.equal(data.batch.source_mode,"new");
+  assert.equal(data.items[0].request.identity_mode,"new");
+  assert.equal(data.items[0].request.reference_asset_id,null);
+  assert.equal(data.items[1].request.identity_mode,"variant");
+  assert.equal(data.items[1].request.reference_asset_id,null);
+  assert.equal(data.items[1].request.visual_production.pending_reference_from_batch_position,1);
+  assert.equal(data.items[0].request.appearance.weather,"Despejado");
+  assert.match(a.api.markdown(),/SIN ID PREVIO/);
+});
+test("cambiar de base nueva a imagen con ID obliga a aportar ID real",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  a.sources[1].dispatch("click");
+  assert.equal(a.api.getState().sourceMode,"existing");
+  assert.throws(()=>a.api.batchRequest(),/ID de referencia/);
+  a.nodes.referenceId.value="scene_valrik_village_morning_001";
+  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,"scene_valrik_village_morning_001");
+  a.sources[0].dispatch("click");
+  assert.equal(a.api.batchRequest().items[0].request.reference_asset_id,null);
+});
+test("recuperar de .md lote que crea imagen base sin referencia previa",async()=>{
+  const a=app();a.batches[1].dispatch("click");const source=a.api.markdown();
+  const b=app();
+  assert.equal(await b.api.loadMDFile({name:"aldea_lote.md",size:source.length,text:async()=>source}),true);
+  assert.equal(b.api.getState().sourceMode,"new");
+  assert.equal(b.api.batchRequest().items[0].request.identity_mode,"new");
 });

@@ -31,6 +31,7 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
+  let batchMode="single",batchItems=[],batchId="",sourceMode="new";
   function slug(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
   function addOpt(v,t){const x=document.createElement("option");x.value=v;x.textContent=t;return x;}
   function fill(id,choices,preferred){$(id).replaceChildren(...choices.map(x=>addOpt(x[0],x[1])));if(choices.some(x=>x[0]===preferred))$(id).value=preferred;}
@@ -100,13 +101,17 @@
     $("summaryPlace").textContent=placeName()||"Pendiente";
     $("summarySubject").textContent=focusName()||"Pendiente";
     $("summaryMode").textContent=mode==="new"?"Nueva":"Variante";
+    $("summaryBatch").textContent=batchMode==="single"?"1 imagen":batchItems.length+(batchMode==="variants"?" variantes":" imágenes distintas");
+    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Descargar lote .md";
     $("summaryFormat").textContent=kind==="portrait"?"4:5 · 768 × 960":"16:9 · 1920 × 1080";
     $("previewType").textContent=kind==="portrait"?"RETRATO":kind==="interior"?"ESCENA INTERIOR":"ESCENA EXTERIOR";
     $("previewGlyph").textContent=kind==="portrait"?"◉":kind==="interior"?"▣":"◇";
     $("status").textContent="";$("status").classList.remove("is-error");save();
   }
   function save(){
-    const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual]};fields.forEach(x=>o[x]=$(x).value);
+    const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual],
+      batchMode,sourceMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
+    fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
   function restore(o){
@@ -116,6 +121,12 @@
     fields.filter(x=>!["house","place","subject"].includes(x)).forEach(x=>{if(typeof o[x]==="string")$(x).value=o[x];});
     if(o.mode==="variant")setMode("variant");
     $("manualBibles").checked=!!o.manualOn;manual=new Set(Array.isArray(o.manual)?o.manual.filter(x=>bib.some(b=>b[0]===x)):[]);
+    $("batchTitle").value=String(o.batchTitle||"").slice(0,100);
+    $("familyName").value=String(o.familyName||"").slice(0,80);
+    batchId=typeof o.batchId==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(o.batchId)?o.batchId:"";
+    batchItems=Array.isArray(o.batchItems)?o.batchItems.slice(0,12).map(normalizeBatchItem):[];
+    sourceMode=o.sourceMode==="existing"?"existing":"new";
+    setBatchMode(["variants","distinct"].includes(o.batchMode)?o.batchMode:"single",false);
     renderBibles();sync();
   }
 
@@ -126,6 +137,15 @@
     if(!match)throw Error("No encuentro el bloque JSON de una solicitud NAF. Selecciona el .md descargado desde NAF.");
     let data;
     try{data=JSON.parse(match[1]);}catch(e){throw Error("El JSON de la solicitud NAF está dañado.");}
+    if(data?.naf_batch_schema_version===1&&data.kind==="lote_de_solicitudes_no_paquete_nap"){
+      if(data.universe_id!=="nimroel"||!["variants","distinct"].includes(data.batch?.mode)||
+        !Array.isArray(data.items)||data.items.length<2||data.items.length>12||
+        data.base?.kind!=="solicitud_no_paquete_nap"||!houses[data.base?.geography?.house]||
+        !data.base?.appearance||!data.base?.focus||!data.base?.nap_output||
+        (data.batch.mode==="variants"&&data.batch.source_mode!=="new"&&!validId.test(data.base.reference_asset_id||"")))
+        throw Error("El lote NAF no es válido (máximo 12 imágenes).");
+      return data;
+    }
     if(!data||data.naf_schema_version!==1||data.kind!=="solicitud_no_paquete_nap"||data.universe_id!=="nimroel"||
        !["exterior","interior","portrait"].includes(data.category)||!houses[data.geography?.house]||
        !data.focus||typeof data.focus.key!=="string"||!data.appearance||!data.nap_output)
@@ -141,6 +161,16 @@
     if(target)el.value=target.value;
   }
   function applyNAFRequest(data){
+    if(data.naf_batch_schema_version===1){
+      applyNAFRequest(data.base);
+      $("batchTitle").value=String(data.batch.title||"").slice(0,100);
+      $("familyName").value=String(data.batch.family_label||"").slice(0,80);
+      batchId=typeof data.batch.id==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(data.batch.id)?data.batch.id:"";
+      batchItems=data.items.map(i=>normalizeBatchItem(i)).slice(0,12);
+      sourceMode=data.batch.source_mode==="new"?"new":"existing";
+      setBatchMode(data.batch.mode,false);sync();
+      return;
+    }
     // Validado antes de tocar el borrador visible. Los campos desconocidos no se ejecutan.
     const geo=data.geography;
     const house=geo.house;
@@ -180,6 +210,7 @@
     const paths=Array.isArray(data.visual_bibles?.paths)?data.visual_bibles.paths:[];
     manual=new Set(bib.filter(b=>paths.includes(root+b[2])).map(b=>b[0]));
     $("manualBibles").checked=data.visual_bibles?.mode==="seleccion_manual_aditiva";
+    setBatchMode("single",false);
     renderBibles();
     sync(); // Actualiza resumen y guarda el borrador importado.
   }
@@ -198,6 +229,194 @@
       return false;
     }
   }
+
+  function activityRule(category,weather,time){
+    if(category==="portrait")return "Retrato: NO eliminar al protagonista por lluvia o nieve. Adaptar vestuario, humedad o fondo cuando proceda, conforme al canon.";
+    if(category==="interior")return "Interior: NO vaciar automáticamente una taberna o posada porque llueva o nieve fuera. Puede haber clientes refugiados; efectos del clima visibles solo con sentido físico.";
+    if(["lluvia_intensa","tormenta","ventisca","nieve"].includes(weather))
+      return "Exterior con condiciones adversas: por defecto SIN NPC ni animales realizando actividad normal a la intemperie. Despejar caminos y plazas de vida injustificada; solo admitir personas resguardándose o con tareas urgentes y protección adecuada. Adaptar charcos, escorrentía, barro, nieve, huellas y refugios de forma físicamente coherente. NO conservar las acciones del PNG despejado.";
+    if(["lluvia_suave","llovizna"].includes(weather))
+      return "Exterior con lluvia suave: menos actividad desprotegida; NPC y animales bajo techo o moviéndose con protección. Evitar repetir las mismas acciones bajo la lluvia.";
+    if(["noche","madrugada"].includes(time))
+      return "Exterior nocturno: menos actividad cotidiana; presencia de NPC o animales solo por guardias, trabajo necesario u otro motivo plausible; luces coherentes.";
+    return "Las variantes mantienen edificios, cámara y disposición, pero la actividad de NPC y animales se adapta siempre a clima, hora y estación.";
+  }
+  function newBatchId(){
+    return "naf_batch_"+new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14)+"_"+Math.random().toString(36).slice(2,8);
+  }
+  function defaultBatchItem(index,kindOfBatch){
+    return {weather:kindOfBatch==="variants"?(sourceMode==="new"?["despejado","lluvia_intensa","nieve"][index%3]:["lluvia_suave","lluvia_intensa","nieve"][index%3]):"auto",
+      time:"auto",season:"auto",notes:""};
+  }
+  function normalizeBatchItem(item){
+    const pick=(id,v)=>Array.from($(id).options).some(o=>o.value===v)?v:"auto";
+    return {weather:pick("weather",item?.weather),time:pick("time",item?.time),
+      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):""};
+  }
+  function renderBatch(){
+    document.querySelectorAll("[data-batch]").forEach(button=>{
+      const selected=button.dataset.batch===batchMode;
+      button.classList.toggle("is-active",selected);
+      button.setAttribute("aria-pressed",String(selected));
+    });
+    $("batchPanel").classList.toggle("is-hidden",batchMode==="single");
+    $("familyWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    $("batchSourceWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    document.querySelectorAll("[data-source]").forEach(button=>{
+      const selected=button.dataset.source===sourceMode;
+      button.classList.toggle("is-active",selected);button.setAttribute("aria-pressed",String(selected));
+    });
+    $("batchSourceHint").textContent=sourceMode==="new"?
+      "Primero generaré la imagen base y tú la aprobarás. Con su ID y PNG prepararé después las variantes.":
+      "Pega en el bloque 01 el ID de la imagen ya aprobada. El PNG original también debe estar accesible.";
+    $("batchHelp").textContent=batchMode==="variants"?
+      (sourceMode==="new"?"La primera imagen creará la identidad de la aldea. Las restantes se generarán DESPUÉS de que apruebes la primera y exista su ID real.":"Todas partirán del ID de la imagen original que pegues. Se preservará su identidad visual.")+ " No conservar NPC trabajando al aire libre durante un temporal.":
+      "Cada elemento representará un lugar o personaje INDEPENDIENTE. Evitaremos repetir la misma taberna o los mismos personajes.";
+    $("batchCount").textContent=String(batchItems.length);
+    $("addBatchBtn").disabled=batchItems.length>=12;
+    const container=$("batchItems");
+    container.replaceChildren();
+    if(batchMode==="single")return;
+    batchItems.forEach((item,index)=>{
+      const card=document.createElement("div");card.className="batch-item";
+      const heading=document.createElement("div");heading.className="batch-item-head";
+      const label=document.createElement("strong");
+      label.textContent=(batchMode==="variants"&&sourceMode==="new"&&index===0?"Imagen base ":batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
+      const remove=document.createElement("button");remove.type="button";
+      remove.className="batch-remove";remove.textContent="Quitar";remove.disabled=batchItems.length<=2;
+      remove.addEventListener("click",()=>{
+        if(batchItems.length<=2)return;
+        batchItems.splice(index,1);renderBatch();sync();
+      });
+      heading.append(label,remove);
+      const fields=document.createElement("div");fields.className="batch-item-fields";
+      for(const [source,key,title] of [["weather","weather","Clima"],["time","time","Hora"],["season","season","Estación"]]){
+        const wrapper=document.createElement("div");wrapper.className="field";
+        const fieldLabel=document.createElement("label");fieldLabel.textContent=title;
+        const select=document.createElement("select");select.setAttribute("aria-label",title+" de imagen "+(index+1));
+        select.replaceChildren(...Array.from($(source).options).map(o=>addOpt(o.value,o.textContent)));
+        select.value=item[key];select.addEventListener("change",()=>{item[key]=select.value;sync();});
+        wrapper.append(fieldLabel,select);fields.append(wrapper);
+      }
+      const wrapper=document.createElement("div");wrapper.className="field batch-item-notes";
+      const fieldLabel=document.createElement("label");fieldLabel.textContent="Detalle particular (opcional)";
+      const input=document.createElement("input");input.type="text";input.maxLength=400;
+      input.value=item.notes;
+      input.placeholder=batchMode==="variants"?"Ej.: camino inundado, nieve sobre los tejados":"Ej.: taberna pequeña, distinto mobiliario";
+      input.addEventListener("input",()=>{item.notes=input.value;sync();});
+      wrapper.append(fieldLabel,input);fields.append(wrapper);
+      card.append(heading,fields);container.append(card);
+    });
+  }
+  function setBatchMode(value,resetItems=true){
+    const chosen=["variants","distinct"].includes(value)?value:"single";
+    const changed=chosen!==batchMode;batchMode=chosen;
+    if(changed&&batchMode==="variants"&&resetItems)sourceMode=validId.test($("referenceId").value.trim())?"existing":"new";
+    if(batchMode!=="single"){
+      if(!batchId)batchId=newBatchId();
+      if(resetItems&&changed||batchItems.length<2)
+        batchItems=[0,1,2].map(i=>defaultBatchItem(i,batchMode));
+      setMode(batchMode==="variants"&&sourceMode==="existing"?"variant":"new");
+    }
+    document.querySelectorAll("[data-mode]").forEach(button=>{
+      button.disabled=batchMode==="variants"?(sourceMode==="new"?button.dataset.mode==="variant":button.dataset.mode==="new"):
+        batchMode==="distinct"?button.dataset.mode==="variant":false;
+    });
+    renderBatch();sync();
+  }
+  function setSourceMode(value){
+    if(batchMode!=="variants")return;
+    const previous=sourceMode;
+    sourceMode=value==="existing"?"existing":"new";
+    const defaults={new:["despejado","lluvia_intensa","nieve"],existing:["lluvia_suave","lluvia_intensa","nieve"]};
+    batchItems=batchItems.map((item,i)=>{
+      const untouched=item.weather===defaults[previous][i%3]&&item.time==="auto"&&item.season==="auto"&&!item.notes;
+      return untouched?{...item,weather:defaults[sourceMode][i%3]}:item;
+    });
+    setMode(sourceMode==="existing"?"variant":"new");
+    document.querySelectorAll("[data-mode]").forEach(button=>{button.disabled=
+      sourceMode==="existing"?button.dataset.mode==="new":button.dataset.mode==="variant";});
+    renderBatch();sync();
+  }
+  function addBatchItem(){
+    if(batchMode==="single"||batchItems.length>=12)return;
+    batchItems.push(defaultBatchItem(batchItems.length,batchMode));renderBatch();sync();
+  }
+  function batchRequest(){
+    if(batchMode==="single")throw Error("Selecciona «Misma escena» o «Imágenes distintas».");
+    if(batchItems.length<2||batchItems.length>12)throw Error("Un lote admite entre 2 y 12 imágenes.");
+    const base=request();
+    if(base.asset_id_proposed)throw Error("En un lote, deja vacío «ID nuevo propuesto». Cada imagen aprobada recibirá un ID propio.");
+    const title=$("batchTitle").value.trim()||
+      (batchMode==="variants"?"Variantes de "+base.focus.label:"Imágenes distintas de "+base.focus.label);
+    const familyId=batchMode==="variants"?"family_"+slug($("familyName").value.trim()||base.reference_asset_id||[$("house").value,focusName(),batchId].join("_")).slice(0,80):null;
+    const images=batchItems.map((item,index)=>{
+      const task=JSON.parse(JSON.stringify(base));
+      const choice=(key,source)=>item[key]==="auto"?task.appearance[source]:
+        Array.from($(key).options).find(o=>o.value===item[key])?.textContent||task.appearance[source];
+      task.appearance.weather=choice("weather","weather");
+      task.appearance.time=choice("time","time");
+      task.appearance.season=choice("season","season");
+      task.free_description=[base.free_description,item.notes].filter(Boolean).join("\nDetalle particular: ");
+      const isVariant=batchMode==="variants"&&(sourceMode==="existing"||index>0);
+      task.identity_mode=isVariant?"variant":"new";
+      task.reference_asset_id=isVariant&&sourceMode==="existing"?base.reference_asset_id:null;
+      task.asset_id_proposed=null;
+      task.visual_production={
+        batch_id:batchId,visual_family_id:isVariant?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
+        same_visual_identity:isVariant,reference_asset_id:task.reference_asset_id,
+        pending_reference_from_batch_position:isVariant&&sourceMode==="new"?1:null,
+        original_png_required:isVariant,
+        approval:"author_review_before_definitive_id_and_nap_zip",
+        activity_coherence:activityRule(kind,item.weather==="auto"?$("weather").value:item.weather,
+          item.time==="auto"?$("time").value:item.time)
+      };
+      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,request:task};
+    });
+    return {naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
+      batch:{id:batchId,title,mode:batchMode,source_mode:batchMode==="variants"?sourceMode:null,family_label:$("familyName").value.trim(),
+        visual_family_id:familyId,item_count:images.length,
+        approval_policy:"individual_png_review_before_id_and_zip"},
+      base,items:images,
+      nap_delivery:{one_zip_per_approved_image:true,zip_flat_five_files:true,
+        no_sqlite_registration_in_naf:true,group_metadata_in_visual_identity:true,
+        manifest_v2_no_extra_fields:true,routing_by_manifest_classification:true}};
+  }
+  function batchMarkdown(){
+    const data=batchRequest();
+    const jobs=data.items.flatMap(item=>[
+      "### Imagen "+String(item.position).padStart(2,"0"),
+      "- Meteorología: "+item.request.appearance.weather,
+      "- Hora: "+item.request.appearance.time,
+      "- Estación: "+item.request.appearance.season,
+      "- Detalles: "+(item.notes||"Lo indicado en las biblias y la solicitud común"),
+      "- Continuidad: "+(item.request.visual_production.same_visual_identity?"MISMO escenario que el PNG original":"NUEVA identidad, distinta de las otras"),
+      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,""
+    ]);
+    return [
+      "# NAF — Lote: "+data.batch.title,"",
+      "> Solicitud para ChatGPT. No es un ZIP listo para NAP.","",
+      "## Reglas del lote","",
+      "- Comprobar las biblias visuales y el canon territorial de cada imagen.",
+      "- MISMA ESCENA CON ID: usar el asset_id original pegado y el PNG original accesible o adjunto; conservar perspectiva, edificios y distribución.",
+      "- MISMA ESCENA SIN ID PREVIO: generar PRIMERO la imagen base del lote. Esperar aprobación del autor, asignar su ID y crear su ZIP. Solo entonces usar el PNG y el ID aprobados para las variantes restantes; no inventar un ID ni generar todas las variantes sin la base.",
+      "- IMÁGENES DISTINTAS: cada taberna, casa, aldea o NPC debe tener identidad propia y diseño distinto, sin reutilizar edificios/encuadres por defecto.",
+      "- NO conservar aldeanos trabajando a la intemperie durante lluvia fuerte, ventisca o nevada; permitir solo actividad justificada y refugios coherentes. En interiores y retratos, no eliminar automáticamente a los protagonistas.",
+      "- GENERAR y mostrar cada PNG al autor; esperar su APROBACIÓN antes de entregar el ID definitivo y producir el ZIP de ese asset. Descartes no llegan a NAP.",
+      "- Cada imagen aprobada tendrá su propio ID único y su ZIP plano con cinco archivos (PNG, manifest, prompt, info y visual_identity). Nunca importar el lote .md directamente en NAP.",
+      "- Conservar batch_id, visual_family_id y reference_asset_id en _visual_identity.json. NO agregar estas claves al manifest v2. NAP archiva mediante classification del manifest, no por palabras del ZIP.",
+      "- Las familias visuales no son nombres ni instancias de aldeas CoreRPG.","",
+      "## Lista de imágenes","",...jobs,
+      "## Datos estructurados","",
+      "~~~json",JSON.stringify(data,null,2),"~~~","",
+      "## Referencias del contrato NAP","",
+      "- robdor80/NAP/config/universes/nimroel/profile.json",
+      "- robdor80/NAP/docs/MANIFEST_V2.md",
+      "- robdor80/NAP/docs/NAMING_V1.md","",
+      "Generado con NAF v0.3."
+    ].join("\n")+"\n";
+  }
+
   function request(){
     const preferred=$("preferredId").value.trim(),ref=$("referenceId").value.trim(),portrait=kind==="portrait";
     if($("place").value==="other"&&!$("customPlace").value.trim())throw Error("Escribe el nombre de la localización.");
@@ -230,6 +449,10 @@
         portrait_sex:portrait?($("portraitSex").value==="other"?$("customSex").value.trim():label("portraitSex")):null,
         portrait_age:portrait?$("portraitAge").value.trim()||null:null},
       free_description:$("notes").value.trim(),
+      visual_production:{reference_asset_id:mode==="variant"?ref:null,
+        same_visual_identity:mode==="variant",original_png_required:mode==="variant",
+        activity_coherence:activityRule(kind,$("weather").value,$("time").value),
+        approval:"author_review_before_definitive_id_and_nap_zip"},
       visual_bibles:{mode:$("manualBibles").checked?"seleccion_manual_aditiva":"seleccion_automatica",
         paths:selectedBibles().map(id=>root+bib.find(b=>b[0]===id)[2])},
       nap_output:{manifest_version:2,classification,master_size:portrait?[768,960]:[1920,1080],
@@ -238,6 +461,7 @@
     };
   }
   function markdown(){
+    if(batchMode!=="single")return batchMarkdown();
     const r=request(),title=r.category==="portrait"?"Retrato":r.category==="interior"?"Escena interior":"Escena exterior";
     const lines=[
       "# NAF — Solicitud de "+title,"","> Solicitud para ChatGPT. NO es un ZIP ni un manifest listo para importar en NAP.","",
@@ -255,6 +479,10 @@
       ...r.visual_bibles.paths.map(x=>"- "+x),"",
       "## Solicitud estructurada","",
       "~~~json",JSON.stringify(r,null,2),"~~~","",
+      "## Continuidad, actividad y aprobación","",
+      "- "+r.visual_production.activity_coherence,
+      "- Si es variante, el ID original NO contiene la imagen: comprobar que el PNG original está accesible; si no, pedirlo. Mantener edificios, camino y encuadre.",
+      "- Primero generar PNG y solicitar valoración del autor. Solo después de aprobación explícita, comunicar ID final copiable y generar un ZIP por imagen.","",
       "## Obligaciones de producción para ChatGPT","",
       "1. Verificar en GitHub las biblias indicadas, el canon del territorio y las referencias visuales aplicables. No inventar canon. En imágenes genéricas, nunca asignar un nombre ni un plano fijo al asentamiento procedural.",
       "2. Crear un prompt de generación completo y la imagen PNG maestra con proporción exacta y realismo cinematográfico naturalista.",
@@ -276,7 +504,8 @@
   function status(message,error){$("status").textContent=message;$("status").classList.toggle("is-error",!!error);}
   function download(){
     try{
-      const text=markdown(),name="naf_"+kind+"_"+$("house").value+"_"+new Date().toISOString().replace(/[:.]/g,"-")+".md";
+      const text=markdown(),name=(batchMode==="single"?"naf_"+kind+"_"+$("house").value:"naf_lote_"+$("house").value)+
+        "_"+new Date().toISOString().replace(/[:.]/g,"-")+".md";
       const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
       const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),10000);status("Solicitud preparada: "+name,false);
@@ -300,7 +529,9 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    setHouse("procedural");setKind("exterior");setMode("new");document.querySelector(".advanced").open=false;sync();
+    batchMode="single";sourceMode="new";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
+    document.querySelector(".advanced").open=false;sync();
   }
   document.querySelectorAll("[data-kind]").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
   document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
@@ -318,6 +549,11 @@
     await loadMDFile(file);
     $("loadFile").value="";
   });
+  document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
+  document.querySelectorAll("[data-source]").forEach(b=>b.addEventListener("click",()=>setSourceMode(b.dataset.source)));
+  $("addBatchBtn").addEventListener("click",addBatchItem);
+  $("batchTitle").addEventListener("input",sync);
+  $("familyName").addEventListener("input",sync);
   $("downloadBtn").addEventListener("click",download);
   $("copyBtn").addEventListener("click",copy);
   $("resetBtn").addEventListener("click",reset);
@@ -326,5 +562,6 @@
   try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,parseNAFMarkdown,applyNAFRequest,loadMDFile,getState:()=>({kind,mode})};
+  window.NAF={markdown,request,batchRequest,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+    setBatchMode,setSourceMode,activityRule,getState:()=>({kind,mode,batchMode,sourceMode,batchCount:batchItems.length})};
 })();
