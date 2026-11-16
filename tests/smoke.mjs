@@ -301,3 +301,136 @@ test("recuperar de .md lote que crea imagen base sin referencia previa",async()=
   assert.equal(b.api.getState().sourceMode,"new");
   assert.equal(b.api.batchRequest().items[0].request.identity_mode,"new");
 });
+
+test("NAF v0.4 tiene seguimiento y controles de producción individual",()=>{
+  assert.match(html,/id="batchProgress"/);
+  assert.match(html,/id="externalPngAvailable"/);
+  assert.match(js,/Descargar esta imagen \.md/);
+  assert.match(css,/.batch-tracker-fields/);
+});
+test("lote distinto: cada imagen puede exportarse sin enviar las demás",()=>{
+  const a=app();a.kinds[1].dispatch("click");a.nodes.subject.value="taberna";
+  a.batches[2].dispatch("click");
+  const first=a.api.individualRequest(0);
+  const second=a.api.individualRequest(1);
+  assert.equal(first.visual_production.batch_position,1);
+  assert.equal(first.visual_production.batch_total,3);
+  assert.equal(first.visual_production.must_generate_one_image_only,true);
+  assert.equal(first.reference_asset_id,null);
+  assert.ok(first.visual_production.visual_family_id!==second.visual_production.visual_family_id);
+  const md=a.api.individualMarkdown(0);
+  assert.match(md,/UNA SOLA imagen/);
+  assert.match(md,/~~~json/);
+  assert.doesNotMatch(md,/### Imagen 02/);
+  assert.match(md,/NO añadirlos al manifest v2/);
+});
+test("variante dependiente bloqueada hasta aprobar PNG base e indicar ID definitivo",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  assert.equal(a.api.itemReadiness(0).ok,true);
+  assert.equal(a.api.itemReadiness(1).ok,false);
+  assert.throws(()=>a.api.individualRequest(1),/Bloqueada/);
+  assert.equal(a.api.setItemStatus(0,"approved"),false);
+  assert.equal(a.api.setItemPngAvailable(0,true),true);
+  assert.equal(a.api.setItemStatus(0,"approved"),true);
+  assert.equal(a.api.itemReadiness(1).ok,false);
+  const id="scene_valrik_village_base_001";
+  assert.equal(a.api.setItemAssetId(0,id),true);
+  assert.equal(a.api.itemReadiness(1).ok,true);
+  assert.equal(a.api.individualRequest(1).reference_asset_id,id);
+  assert.equal(a.api.individualRequest(1).visual_production.pending_reference_from_batch_position,null);
+  assert.equal(a.api.individualRequest(1).visual_production.original_png_required,true);
+  assert.equal(a.api.batchRequest().items[0].request.visual_production.visual_family_id,
+    a.api.batchRequest().items[1].request.visual_production.visual_family_id);
+});
+test("lote con imagen existente: referencia y disponibilidad real del PNG",()=>{
+  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
+  assert.equal(a.api.itemReadiness(0).ok,false);
+  a.nodes.referenceId.value="scene_valrik_village_001";
+  a.nodes.referenceId.dispatch("change");
+  assert.equal(a.api.itemReadiness(0).ok,false);
+  a.nodes.externalPngAvailable.checked=true;a.nodes.externalPngAvailable.dispatch("change");
+  assert.equal(a.api.itemReadiness(0).ok,true);
+  assert.equal(a.api.individualRequest(0).reference_asset_id,"scene_valrik_village_001");
+});
+test("seguimiento PNG aprobado ID ZIP con transición controlada",()=>{
+  const a=app();a.batches[2].dispatch("click");
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
+  assert.equal(a.api.setItemStatus(0,"png_generated"),true);
+  assert.equal(a.api.setItemStatus(0,"approved"),false);
+  assert.equal(a.api.setItemPngAvailable(0,true),true);
+  assert.equal(a.api.setItemStatus(0,"approved"),true);
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
+  assert.equal(a.api.setItemAssetId(0,"scene_valrik_tavern_interior_001"),true);
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),true);
+  assert.equal(a.api.itemReadiness(0).ok,false);
+  assert.equal(a.api.batchRequest().items[0].progress.status,"zip_delivered");
+});
+test("un ID repetido en dos imágenes del lote no permite marcar ZIP entregado",()=>{
+  const a=app();a.batches[2].dispatch("click");
+  const id="scene_valrik_tavern_interior_001";
+  for(let i=0;i<2;i++){
+    a.api.setItemPngAvailable(i,true);
+    a.api.setItemStatus(i,"approved");
+    a.api.setItemAssetId(i,id);
+  }
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
+  assert.equal(a.api.setItemAssetId(1,"scene_valrik_tavern_interior_002"),true);
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),true);
+  assert.equal(a.api.setItemStatus(1,"zip_delivered"),true);
+});
+test("variante nueva no puede sobrescribir el mismo ID que la original",()=>{
+  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
+  a.nodes.referenceId.value="scene_valrik_original_001";
+  a.api.setItemPngAvailable(0,true);
+  a.api.setItemStatus(0,"approved");
+  a.api.setItemAssetId(0,"scene_valrik_original_001");
+  assert.equal(a.api.setItemStatus(0,"zip_delivered"),false);
+});
+test("estado descartado impide repetir la solicitud individual",()=>{
+  const a=app();a.batches[2].dispatch("click");
+  assert.equal(a.api.setItemStatus(1,"rejected"),true);
+  assert.equal(a.api.itemReadiness(1).ok,false);
+  assert.throws(()=>a.api.individualMarkdown(1),/descartada/);
+});
+test("no se retira aprobación de la base tras iniciar una variante",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  a.api.setItemPngAvailable(0,true);a.api.setItemStatus(0,"approved");
+  a.api.setItemAssetId(0,"scene_valrik_village_001");
+  a.api.setItemStatus(1,"in_preparation");
+  assert.equal(a.api.setItemStatus(0,"rejected"),false);
+  assert.equal(a.api.setItemAssetId(0,"scene_valrik_different_001"),false);
+});
+test("exportación e importación conservan progreso e IDs entre dispositivos",async()=>{
+  const a=app();a.batches[1].dispatch("click");
+  a.api.setItemPngAvailable(0,true);
+  a.api.setItemStatus(0,"approved");
+  a.api.setItemAssetId(0,"scene_valrik_village_base_001");
+  const md=a.api.markdown();
+  assert.match(md,/PNG: disponible/);
+  const b=app();
+  assert.equal(await b.api.loadMDFile({name:"seguimiento.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.batchRequest().items[0].progress.status,"approved");
+  assert.equal(b.api.batchRequest().items[0].progress.asset_id,"scene_valrik_village_base_001");
+  assert.equal(b.api.itemReadiness(1).ok,true);
+});
+test("cargar lote v0.3 sin progreso asigna estado pendiente",async()=>{
+  const a=app();a.batches[2].dispatch("click");
+  const legacy=a.api.batchRequest();
+  legacy.items.forEach(i=>delete i.progress);
+  delete legacy.batch.external_png_available;
+  const md="# NAF\n~~~json\n"+JSON.stringify(legacy,null,2)+"\n~~~\n";
+  const b=app();
+  assert.equal(await b.api.loadMDFile({name:"old.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.batchRequest().items[0].progress.status,"pending");
+  assert.equal(b.api.batchRequest().items[0].progress.asset_id,"");
+});
+test("borrador conserva estado al reabrir NAF en mismo dispositivo",()=>{
+  const storage=new Map(),a=app(storage);a.batches[2].dispatch("click");
+  a.api.setItemPngAvailable(1,true);
+  a.api.setItemStatus(1,"approved");
+  a.api.setItemAssetId(1,"scene_valrik_tavern_002");
+  const b=app(storage);
+  assert.equal(b.api.batchRequest().items[1].progress.status,"approved");
+  assert.equal(b.api.batchRequest().items[1].progress.asset_id,"scene_valrik_tavern_002");
+  assert.equal(b.api.batchRequest().items[1].progress.png_available,true);
+});
