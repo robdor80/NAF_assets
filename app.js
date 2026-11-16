@@ -323,7 +323,55 @@
       input.placeholder=batchMode==="variants"?"Ej.: camino inundado, nieve sobre los tejados":"Ej.: taberna pequeña, distinto mobiliario";
       input.addEventListener("input",()=>{item.notes=input.value;sync();});
       wrapper.append(fieldLabel,input);fields.append(wrapper);
-      card.append(heading,fields);container.append(card);
+      card.append(heading,fields);
+      const tracker=document.createElement("div");tracker.className="batch-tracker";
+      const trackerFields=document.createElement("div");trackerFields.className="batch-tracker-fields";
+      const statusField=document.createElement("div");statusField.className="field";
+      const statusLabel=document.createElement("label");statusLabel.textContent="Estado de producción";
+      const select=document.createElement("select");select.setAttribute("aria-label","Estado imagen "+(index+1));
+      select.replaceChildren(...progressStates.map(v=>addOpt(v,progressLabels[v])));
+      select.value=item.progress.status;
+      select.addEventListener("change",()=>{
+        if(!setItemStatus(index,select.value)){select.value=item.progress.status;return;}
+        renderBatch();sync();
+      });
+      statusField.append(statusLabel,select);
+      const idField=document.createElement("div");idField.className="field";
+      const idLabel=document.createElement("label");idLabel.textContent="ID definitivo tras aprobación";
+      const id=document.createElement("input");id.type="text";id.maxLength=96;
+      id.setAttribute("aria-label","ID definitivo imagen "+(index+1));
+      id.placeholder="Pega el ID entregado por ChatGPT";id.value=item.progress.asset_id;
+      id.addEventListener("input",()=>{item.progress.asset_id=id.value.trim();sync();});
+      id.addEventListener("change",()=>{
+        const next=id.value.trim();
+        if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
+           batchItems.slice(1).some(x=>x.progress.status!=="pending")&&
+           next!==item.progress.asset_id){
+          status("La imagen base ya tiene variantes iniciadas; no cambies su identidad.",true);
+          id.value=item.progress.asset_id;return;
+        }
+        renderBatch();sync();
+      });
+      idField.append(idLabel,id);trackerFields.append(statusField,idField);
+      const png=document.createElement("label");png.className="batch-png-confirm";
+      const pngCheck=document.createElement("input");pngCheck.type="checkbox";
+      pngCheck.setAttribute("aria-label","PNG disponible imagen "+(index+1));
+      pngCheck.checked=item.progress.png_available;
+      pngCheck.addEventListener("change",()=>{item.progress.png_available=pngCheck.checked;renderBatch();sync();});
+      const pngText=document.createElement("span");pngText.textContent="PNG disponible para ChatGPT";
+      png.append(pngCheck,pngText);
+      const hint=document.createElement("p");hint.className="batch-item-hint";
+      const readiness=itemReadiness(index);hint.textContent=readiness.why;
+      const actions=document.createElement("div");actions.className="batch-item-actions";
+      const downloadOne=document.createElement("button");downloadOne.type="button";
+      downloadOne.className="btn btn-secondary btn-small";downloadOne.textContent="Descargar esta imagen .md";
+      const copyOne=document.createElement("button");copyOne.type="button";
+      copyOne.className="btn btn-quiet btn-small";copyOne.textContent="Copiar solicitud";
+      downloadOne.disabled=copyOne.disabled=!readiness.ok;
+      downloadOne.addEventListener("click",()=>downloadBatchItem(index));
+      copyOne.addEventListener("click",()=>copyBatchItem(index));
+      actions.append(downloadOne,copyOne);tracker.append(trackerFields,png,hint,actions);
+      card.append(tracker);container.append(card);
     });
   }
   function setBatchMode(value,resetItems=true){
