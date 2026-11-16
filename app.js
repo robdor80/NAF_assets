@@ -403,4 +403,272 @@
     };
   }
 
+
+  function lotRequests(){
+    if(workflow!=="lot")throw Error("Selecciona Lote.");
+    const count=Number($("lotCount").value);
+    if(!Number.isInteger(count)||count<2||count>12)throw Error("Selecciona entre 2 y 12 imágenes.");
+    const base=request();
+    const id=lotId||newLotId(),title=$("lotTitle").value.trim()||
+      (count+" "+focusName()+" · "+houses[$("house").value][0]+"/"+placeName());
+    const items=[];
+    for(let i=0;i<count;i++){
+      const q=JSON.parse(JSON.stringify(base));
+      q.identity_mode="new";q.reference_asset_id=null;q.asset_id_proposed=null;
+      q.visual_production.reference_asset_id=null;
+      q.visual_production.same_visual_identity=false;
+      q.visual_production.original_png_required=false;
+      q.visual_production.relationship=null;
+      q.visual_production.batch={
+        batch_id:id,batch_label:title,batch_index:i+1,batch_total:count,
+        batch_kind:lotType==="views"?"same_location_views":"independent_same_theme",
+        source_asset_id:null
+      };
+      if(lotType==="views"){
+        const chosen=cameras[kind][i%cameras[kind].length];
+        const guidance=chosen[1];
+        q.appearance.camera=guidance;
+        q.visual_production.shared_location_visual_id="location_"+id;
+        q.visual_production.visual_family_id="location_"+id;
+        q.visual_production.view_role=chosen[0];
+        q.visual_production.coherence={
+          same_physical_place:true,
+          perspective:guidance,
+          reference_image_position:i===0?null:1,
+          previous_pngs_required_for_best_continuity:i>0,
+          preserve_buildings_paths_landmarks:true,
+          do_not_invent_core_instance_name:true
+        };
+        const continuity=i===0?
+          "ESTABLECER IDENTIDAD DEL LUGAR: fijar arquitectura, caminos, distribución, hitos y materiales. Esta es la imagen de referencia de las siguientes vistas. No asignar nombre ni instancia procedural a CoreRPG.":
+          "MISMO LUGAR QUE LA IMAGEN 01: utilizar su PNG aprobado como referencia visual (y las vistas previas que existan). Conservar edificios, caminos, fachadas, posición relativa de hitos y materiales; cambiar SOLO el punto de vista. No afirmar continuidad espacial exacta si los PNG previos no están disponibles.";
+        q.free_description=[base.free_description,"Vista "+(i+1)+": "+guidance,continuity].filter(Boolean).join("\n\n");
+      }else{
+        const variation=independentDifferences(i);
+        q.visual_production.visual_family_id=null;
+        q.visual_production.shared_location_visual_id=null;
+        q.visual_production.view_role=null;
+        q.visual_production.coherence={
+          same_physical_place:false,
+          independently_generated:true,
+          variation_level:$("lotVariation").value,
+          no_repeated_layout_or_person:true
+        };
+        q.free_description=[base.free_description,
+          "IMAGEN INDEPENDIENTE "+(i+1)+" DE "+count+". "+variation,
+          "Comparte solo tipo, cultura y contexto con el resto del lote. NO es el mismo edificio, aldea ni persona. Variar la distribución, identidad y composición sin romper el canon."].filter(Boolean).join("\n\n");
+      }
+      items.push(q);
+    }
+    return {batch_id:id,batch_label:title,batch_type:lotType,items};
+  }
+  function makeMarkdown(req){
+    const variant=req.identity_mode==="variant",visual=req.visual_production||{};
+    const batch=visual.batch||null,views=batch?.batch_kind==="same_location_views";
+    const overview=[
+      "# NAF v0.5 — "+(variant?"Variante de imagen":batch?"Imagen "+batch.batch_index+" de "+batch.batch_total+" · "+batch.batch_label:"Imagen única"),"",
+      "> SOLO UNA IMAGEN por solicitud. Este .md no es el ZIP de NAP; la aprobación la decide el autor.","",
+      "## Solicitud","",
+      "- Recurso: "+(req.category==="portrait"?"Retrato":req.category==="interior"?"Escena interior":"Escena exterior"),
+      "- Territorio: "+req.geography.house_name+" · "+req.geography.place_name,
+      "- Tipo: "+req.focus.label,
+      "- Condiciones: "+req.appearance.time+" · "+req.appearance.weather+" · "+req.appearance.season,
+      "- Encuadre: "+req.appearance.camera,
+      "- Ocupación: "+req.appearance.occupancy,
+      ...(req.category==="portrait"?["- Sexo: "+req.appearance.portrait_sex,"- Edad aparente: "+(req.appearance.portrait_age||"Por determinar")]:[]),
+      ...(variant?["- ID ORIGINAL: "+req.reference_asset_id]:[]),
+      ...(batch?["- Lote temático: "+batch.batch_id,"- Elemento: "+batch.batch_index+"/"+batch.batch_total,
+        "- Tipo de lote: "+(views?"VISTAS DEL MISMO LUGAR":"LUGARES O PERSONAJES DISTINTOS")]:[]),
+      "","## Notas e instrucciones de composición","",
+      req.free_description||"Composición naturalista de acuerdo con las biblias visuales.","",
+      "## Coherencia de mundo y clima","",
+      visual.activity_coherence||"Adaptar siempre la actividad exterior al clima y horario.",
+      variant?"Es una VARIANTE de la misma imagen original: conservar el encuadre, la arquitectura, el camino y los detalles identificativos. Necesitas consultar el PNG original; el ID solo es una referencia textual. Si no está accesible, solicitar al autor que lo adjunte.":"Mantener la diversidad visual y el canon del territorio.",
+      ...(views?[
+        "Este conjunto muestra el MISMO LUGAR físico desde distintos puntos. No son cinco aldeas independientes ni cambios meteorológicos de una sola cámara.",
+        "Imagen 01: panorámica elevada inclinada a unos 45 grados, desde fuera y con suficiente distancia; jamás vista cenital.",
+        "Para las vistas posteriores: examinar el PNG de la primera vista aprobada y, si existen, las intermedias. Reconstruir con prudencia posiciones relativas, accesos, edificios reconocibles, caminos y materiales. No inventar edificios incompatibles.",
+        "Si no se dispone de las imágenes previas, indicarlo; no afirmar que la continuidad visual está garantizada."
+      ]:[]),
+      ...(batch&&!views?[
+        "Este lote es TEMÁTICO: cada imagen representa un local, asentamiento o personaje DIFERENTE. No son variantes ni distintas cámaras de un mismo lugar.",
+        "Mantener estilo cultural compartido y diferencias lógicas de planta, escala, mobiliario, actividad y composición."
+      ]:[]),"",
+      ...(req.geography.procedural_template?[
+        "Plantilla visual genérica: NO bautizar el asentamiento ni fijar un identificador de instancia. Solo CoreRPG asigna instancias y nombres procedurales."
+      ]:[]),
+      "## Biblias visuales obligatorias","",
+      ...req.visual_bibles.paths.map(p=>"- "+p),"",
+      "## Proceso obligatorio en ChatGPT","",
+      "1. Verificar las biblias indicadas en robdor80/Videojuego_Nimroel y el canon correspondiente; no inventar canon.",
+      "2. GENERAR SOLO UN PNG maestro de "+req.nap_output.master_size.join(" × ")+" px, mostrarlo al autor y proporcionar al mismo tiempo un ID CANDIDATO copiable conforme a Naming v1 de NAP. Comprobar colisiones con IDs disponibles antes de confirmarlo.",
+      "3. Si el autor RECHAZA el PNG, crear OTRO PNG con OTRO ID CANDIDATO. No reutilizar ese ID rechazado; todavía NO hacer ZIP.",
+      "4. ÚNICAMENTE con aprobación explícita del autor, mantener el ID del PNG aprobado y, cuando el autor solicite el paquete, generar el ZIP individual de NAP. Nunca convertir una propuesta rechazada en definitiva.",
+      "5. El ZIP NAP debe contener exactamente cinco ficheros planos: <asset_id>.png, <asset_id>_manifest.json, <asset_id>_prompt.md, <asset_id>_info.md y <asset_id>_visual_identity.json. NO incluir WebP.",
+      "6. Manifest v2 con SOLO seis campos raíz: schema_version, universe_id, asset_id, asset_type, production_profile, classification. Las relaciones entre variantes, lotes y vistas van en _visual_identity.json, no en el manifest.",
+      "7. La ruta física final de NAP procede de classification del manifest; NAP convertirá a WebP. Posteriormente se copiarán las imágenes aprobadas al juego con un índice de recursos, sin mover originales de NAP.",
+      ...(variant?["8. Incluir relationship.type='variant', relationship.base_asset_id y el grupo visual en _visual_identity.json; conservar la clasificación territorial de la base."]:[]),
+      ...(batch?["8. Incluir batch_id, batch_label, batch_index, batch_total, batch_kind y, para vistas, shared_location_visual_id y view_role en _visual_identity.json. No clasificar imágenes independientes como variantes."]:[]),
+      "","## Datos estructurados","",
+      "~~~json",JSON.stringify(req,null,2),"~~~","",
+      "## Contratos de referencia","",
+      "- robdor80/NAP/docs/NAMING_V1.md",
+      "- robdor80/NAP/docs/MANIFEST_V2.md",
+      "- robdor80/NAP/config/universes/nimroel/profile.json","",
+      "Generado con NAF v0.5."
+    ];
+    return overview.join("\n")+"\n";
+  }
+  function markdown(){
+    if(workflow==="lot")throw Error("En un lote descarga los .md por separado o todos dentro de un ZIP.");
+    return makeMarkdown(request());
+  }
+  function lotMarkdown(index){
+    const all=lotRequests();
+    if(!Number.isInteger(index)||index<0||index>=all.items.length)throw Error("Índice de lote fuera de rango.");
+    return makeMarkdown(all.items[index]);
+  }
+  function lotFileName(i){
+    if(!lotId)lotId=newLotId();
+    return lotId+"_"+String(i+1).padStart(2,"0")+".md";
+  }
+  function crc32(data){
+    let crc=0xFFFFFFFF;
+    for(const b of data){
+      crc^=b;
+      for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xEDB88320:0);
+    }
+    return (crc^0xFFFFFFFF)>>>0;
+  }
+  // ZIP estándar sin compresión, totalmente local: incluye SOLO archivos .md, no paquetes NAP.
+  function zipMarkdowns(files){
+    const encoder=new TextEncoder(),parts=[],centers=[];
+    let offset=0,centerSize=0;
+    for(const file of files){
+      const name=encoder.encode(file.name),body=encoder.encode(file.text),crc=crc32(body);
+      if(name.length>65535||body.length>0xFFFFFFFF)throw Error("El fichero no cabe en ZIP.");
+      const local=new Uint8Array(30+name.length),v=new DataView(local.buffer);
+      v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x0800,true);
+      v.setUint16(8,0,true);v.setUint16(10,0,true);v.setUint16(12,0x0021,true);
+      v.setUint32(14,crc,true);v.setUint32(18,body.length,true);v.setUint32(22,body.length,true);
+      v.setUint16(26,name.length,true);local.set(name,30);
+      parts.push(local,body);
+      const central=new Uint8Array(46+name.length),c=new DataView(central.buffer);
+      c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);
+      c.setUint16(8,0x0800,true);c.setUint16(10,0,true);c.setUint16(12,0,true);
+      c.setUint16(14,0x0021,true);c.setUint32(16,crc,true);
+      c.setUint32(20,body.length,true);c.setUint32(24,body.length,true);
+      c.setUint16(28,name.length,true);c.setUint32(42,offset,true);
+      central.set(name,46);centers.push(central);
+      offset+=local.length+body.length;centerSize+=central.length;
+    }
+    const end=new Uint8Array(22),e=new DataView(end.buffer);
+    e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);
+    e.setUint32(12,centerSize,true);e.setUint32(16,offset,true);
+    return new Blob([...parts,...centers,end],{type:"application/zip"});
+  }
+  function saveBlob(data,filename){
+    const url=URL.createObjectURL(data),a=document.createElement("a");
+    a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }
+  function downloadLotItem(index){
+    try{
+      saveBlob(new Blob([lotMarkdown(index)],{type:"text/markdown;charset=utf-8"}),lotFileName(index));
+      status("Descargada solo la solicitud "+(index+1)+".",false);
+    }catch(e){status(e.message||"No se pudo descargar.",true);}
+  }
+  async function copyText(content){
+    if(navigator.clipboard?.writeText)return navigator.clipboard.writeText(content);
+    const node=document.createElement("textarea");node.value=content;document.body.appendChild(node);
+    node.select();const copied=document.execCommand("copy");node.remove();
+    if(!copied)throw Error("No se puede copiar.");
+  }
+  async function copyLotItem(index){
+    try{await copyText(lotMarkdown(index));status("Copiada solo la solicitud "+(index+1)+".",false);}
+    catch(e){status(e.message||"No se pudo copiar.",true);}
+  }
+  function download(){
+    try{
+      if(workflow==="lot"){
+        const data=lotRequests();
+        const files=data.items.map((item,i)=>({name:lotFileName(i),text:makeMarkdown(item)}));
+        saveBlob(zipMarkdowns(files),data.batch_id+".zip");
+        status("ZIP con "+files.length+" solicitudes .md preparado. No es un ZIP de NAP.",false);
+      }else{
+        const name="naf_"+(workflow==="variant"?"variante_":"imagen_")+kind+"_"+$("house").value+"_"+new Date().toISOString().replace(/[:.]/g,"-")+".md";
+        saveBlob(new Blob([markdown()],{type:"text/markdown;charset=utf-8"}),name);
+        status("Solicitud preparada: "+name,false);
+      }
+    }catch(e){status(e.message||"No se pudo generar la solicitud.",true);}
+  }
+  async function copy(){
+    try{await copyText(markdown());status("Solicitud copiada.",false);}
+    catch(e){status(e.message||"No se pudo copiar.",true);}
+  }
+  function status(message,error){
+    $("status").textContent=message;$("status").classList.toggle("is-error",!!error);
+  }
+  function reset(){
+    if(!confirm("¿Empezar una solicitud nueva y borrar el formulario actual?"))return;
+    try{localStorage.removeItem(draftKey);}catch(e){}
+    for(const id of fields)$(id).value="";
+    for(const id of ["time","weather","season","scale","population","camera"])$(id).value="auto";
+    $("portraitSex").value="";$("house").value="valrik";
+    $("lotCount").value="5";$("lotVariation").value="balanced";$("lotTitle").value="";
+    $("manualBibles").checked=false;manual.clear();lotId=newLotId();
+    if(referenceImageUrl){URL.revokeObjectURL(referenceImageUrl);referenceImageUrl=null;}
+    referenceImageName="";$("referenceImagePreview").classList.add("is-hidden");
+    $("referenceImageStatus").textContent="También tendrás que adjuntar el PNG original en ChatGPT: el .md no contiene sus píxeles.";
+    setHouse("procedural");setKind("exterior");setWorkflow("single");setLotType("independent");
+    document.querySelector(".advanced").open=false;sync();status("Formulario nuevo.",false);
+  }
+  function referenceImageChanged(file){
+    if(!file)return;
+    if(!/\.png$/i.test(file.name||"")||file.type&&file.type!=="image/png"||file.size>30000000){
+      status("Selecciona un PNG de hasta 30 MB.",true);return;
+    }
+    if(referenceImageUrl)URL.revokeObjectURL(referenceImageUrl);
+    referenceImageUrl=URL.createObjectURL(file);referenceImageName=file.name;
+    $("referenceImagePreview").src=referenceImageUrl;
+    $("referenceImagePreview").classList.remove("is-hidden");
+    $("referenceImageStatus").textContent="PNG local: "+file.name+". IMPORTANTE: adjúntalo también a ChatGPT; NAF no lo envía.";
+    status("PNG cargado para previsualización local; recuerda adjuntarlo a ChatGPT.",false);
+  }
+  document.querySelectorAll("[data-kind]").forEach(b=>b.addEventListener("click",()=>{setKind(b.dataset.kind);renderLot();}));
+  document.querySelectorAll("[data-workflow]").forEach(b=>b.addEventListener("click",()=>setWorkflow(b.dataset.workflow)));
+  document.querySelectorAll("[data-lot-type]").forEach(b=>b.addEventListener("click",()=>setLotType(b.dataset.lotType)));
+  $("house").addEventListener("change",()=>setHouse(""));
+  $("place").addEventListener("change",()=>{renderBibles();sync();});
+  $("subject").addEventListener("change",()=>{renderBibles();renderLot();sync();});
+  $("manualBibles").addEventListener("change",()=>{
+    if($("manualBibles").checked&&!manual.size)manual=new Set(autoBibles());
+    renderBibles();sync();
+  });
+  fields.forEach(id=>$(id).addEventListener("input",sync));
+  $("lotCount").addEventListener("change",()=>{renderLot();sync();});
+  $("lotVariation").addEventListener("change",()=>{renderLot();sync();});
+  $("lotTitle").addEventListener("input",sync);
+  $("loadBtn").addEventListener("click",()=>$("loadFile").click());
+  $("loadFile").addEventListener("change",async()=>{
+    await loadMDFile($("loadFile").files?.[0]);$("loadFile").value="";
+  });
+  $("referenceImageBtn").addEventListener("click",()=>$("referenceImageFile").click());
+  $("referenceImageFile").addEventListener("change",()=>{
+    referenceImageChanged($("referenceImageFile").files?.[0]);$("referenceImageFile").value="";
+  });
+  $("downloadBtn").addEventListener("click",download);
+  $("copyBtn").addEventListener("click",copy);
+  $("resetBtn").addEventListener("click",reset);
+  let stored=null;
+  try{stored=JSON.parse(localStorage.getItem(draftKey)||"null")||
+    JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
+  lotId=newLotId();setHouse("procedural");restore(stored);
+  setWorkflow(workflow);setLotType(lotType);renderLot();
+  if("serviceWorker" in navigator&&location.protocol==="https:")
+    navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  window.NAF={getState:()=>({workflow,kind,lotType,lotId,mode}),
+    request,markdown,lotRequests,lotMarkdown,makeMarkdown,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+    setWorkflow,setLotType,zipMarkdowns,activityRule};
+
 })();
