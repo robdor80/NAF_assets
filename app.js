@@ -433,6 +433,16 @@
   function setItemStatus(index,value){
     const item=batchItems[index];
     if(!item||!progressStates.includes(value))return false;
+    if(!["pending","rejected"].includes(value)&&batchMode==="variants"){
+      const sourceReady=sourceMode==="existing"?
+        validId.test($("referenceId").value.trim())&&externalPngAvailable:
+        index===0||(["approved","zip_delivered"].includes(batchItems[0].progress.status)&&
+          validId.test(batchItems[0].progress.asset_id)&&batchItems[0].progress.png_available);
+      if(!sourceReady){
+        status("Esta variante todavía está bloqueada: falta el ID y PNG de la imagen base aprobada.",true);
+        return false;
+      }
+    }
     if(value==="approved"&&!item.progress.png_available){
       status("Marca primero que el PNG de esta imagen está disponible.",true);return false;
     }
