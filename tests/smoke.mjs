@@ -434,3 +434,41 @@ test("borrador conserva estado al reabrir NAF en mismo dispositivo",()=>{
   assert.equal(b.api.batchRequest().items[1].progress.asset_id,"scene_valrik_tavern_002");
   assert.equal(b.api.batchRequest().items[1].progress.png_available,true);
 });
+
+test("no se puede avanzar estado de una variante sin la base aprobada",()=>{
+  const a=app();a.batches[1].dispatch("click");
+  assert.equal(a.api.setItemStatus(1,"in_preparation"),false);
+  assert.equal(a.api.setItemStatus(1,"png_generated"),false);
+  a.api.setItemPngAvailable(0,true);
+  a.api.setItemStatus(0,"approved");
+  a.api.setItemAssetId(0,"scene_valrik_base_001");
+  assert.equal(a.api.setItemStatus(1,"in_preparation"),true);
+});
+test("alterna imagen individual y lote sin perder progreso",()=>{
+  const a=app();a.batches[2].dispatch("click");
+  a.api.setItemPngAvailable(1,true);
+  a.api.setItemStatus(1,"approved");
+  a.api.setItemAssetId(1,"scene_valrik_tavern_002");
+  a.batches[0].dispatch("click");
+  assert.equal(a.api.getState().batchMode,"single");
+  a.batches[2].dispatch("click");
+  assert.equal(a.api.getState().batchMode,"distinct");
+  assert.equal(a.api.batchRequest().items[1].progress.status,"approved");
+  assert.equal(a.api.batchRequest().items[1].progress.asset_id,"scene_valrik_tavern_002");
+});
+test("cambiar el tipo de lote reinicia progreso pero no afecta a NAP",()=>{
+  const a=app();a.batches[2].dispatch("click");
+  a.api.setItemPngAvailable(0,true);a.api.setItemStatus(0,"approved");
+  a.batches[1].dispatch("click");
+  assert.equal(a.api.getState().batchMode,"variants");
+  assert.equal(a.api.batchRequest().items[0].progress.status,"pending");
+});
+test("PNG de origen de una variante existente se conserva al exportar e importar",async()=>{
+  const a=app();a.batches[1].dispatch("click");a.sources[1].dispatch("click");
+  a.nodes.referenceId.value="scene_valrik_original_001";
+  a.nodes.externalPngAvailable.checked=true;a.nodes.externalPngAvailable.dispatch("change");
+  const md=a.api.markdown();
+  const b=app();assert.equal(await b.api.loadMDFile({name:"variant_progress.md",size:md.length,text:async()=>md}),true);
+  assert.equal(b.api.batchRequest().batch.external_png_available,true);
+  assert.equal(b.api.itemReadiness(0).ok,true);
+});
