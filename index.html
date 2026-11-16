@@ -211,6 +211,14 @@
               <button type="button" class="batch-mode" data-batch="distinct" aria-pressed="false"><strong>Imágenes distintas</strong><span>Varias tabernas, aldeas…</span></button>
             </div>
             <div id="batchPanel" class="batch-panel is-hidden">
+              <div id="batchSourceWrap" class="batch-source">
+                <div class="field-title">¿Cuál es la imagen base de estas variantes?</div>
+                <div class="pill-switch" role="group" aria-label="Origen visual de las variantes">
+                  <button type="button" data-source="new" class="is-active" aria-pressed="true">Crear imagen base</button>
+                  <button type="button" data-source="existing" aria-pressed="false">Usar imagen aprobada</button>
+                </div>
+                <small id="batchSourceHint">La primera imagen será la base. Tras aprobarla y obtener su ID, se producirán las siguientes.</small>
+              </div>
               <div class="field-grid grid-two">
                 <div class="field">
                   <label for="batchTitle">Nombre del lote (solo organizativo)</label>
