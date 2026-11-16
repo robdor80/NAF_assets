@@ -663,7 +663,7 @@
   let stored=null;
   try{stored=JSON.parse(localStorage.getItem(draftKey)||"null")||
     JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
-  lotId=newLotId();setHouse("procedural");restore(stored);
+  lotId=newLotId();setHouse("procedural");setKind("exterior");restore(stored);
   setWorkflow(workflow);setLotType(lotType);renderLot();
   if("serviceWorker" in navigator&&location.protocol==="https:")
     navigator.serviceWorker.register("./sw.js").catch(()=>{});
