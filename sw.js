@@ -1,5 +1,5 @@
 /* NAF: caché local de la aplicación; no almacena ni sube las solicitudes. */
-const CACHE = "naf-assets-v02";
+const CACHE = "naf-assets-v03";
 const APP_FILES = ["./", "./index.html", "./styles.css", "./app.js", "./favicon.svg", "./manifest.webmanifest"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_FILES)).then(() => self.skipWaiting()));
