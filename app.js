@@ -343,14 +343,14 @@
       id.placeholder="Pega el ID entregado por ChatGPT";id.value=item.progress.asset_id;
       id.disabled=batchMode==="variants"&&sourceMode==="new"&&index===0&&
         batchItems.slice(1).some(x=>x.progress.status!=="pending");
-      id.addEventListener("input",()=>{item.progress.asset_id=id.value.trim();sync();});
+      id.addEventListener("input",()=>{if(setItemAssetId(index,id.value))sync();});
       id.addEventListener("change",()=>{renderBatch();sync();});
       idField.append(idLabel,id);trackerFields.append(statusField,idField);
       const png=document.createElement("label");png.className="batch-png-confirm";
       const pngCheck=document.createElement("input");pngCheck.type="checkbox";
       pngCheck.setAttribute("aria-label","PNG disponible imagen "+(index+1));
       pngCheck.checked=item.progress.png_available;
-      pngCheck.addEventListener("change",()=>{item.progress.png_available=pngCheck.checked;renderBatch();sync();});
+      pngCheck.addEventListener("change",()=>{setItemPngAvailable(index,pngCheck.checked);renderBatch();sync();});
       const pngText=document.createElement("span");pngText.textContent="PNG disponible para ChatGPT";
       png.append(pngCheck,pngText);
       const hint=document.createElement("p");hint.className="batch-item-hint";
@@ -403,6 +403,18 @@
     batchItems.push(defaultBatchItem(batchItems.length,batchMode));renderBatch();sync();
   }
 
+  function setItemAssetId(index,value){
+    const item=batchItems[index];
+    if(!item||typeof value!=="string"||value.length>96)return false;
+    if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
+       batchItems.slice(1).some(x=>x.progress.status!=="pending"))return false;
+    item.progress.asset_id=value.trim();save();
+    return true;
+  }
+  function setItemPngAvailable(index,available){
+    const item=batchItems[index];if(!item)return false;
+    item.progress.png_available=available===true;save();return true;
+  }
   function setItemStatus(index,value){
     const item=batchItems[index];
     if(!item||!progressStates.includes(value))return false;
@@ -758,6 +770,6 @@
   try{savedDraft=JSON.parse(localStorage.getItem("naf_draft_v1")||"null");}catch(e){}
   setHouse("procedural");restore(savedDraft);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  window.NAF={markdown,request,batchRequest,individualRequest,individualMarkdown,setItemStatus,itemReadiness,parseNAFMarkdown,applyNAFRequest,loadMDFile,
+  window.NAF={markdown,request,batchRequest,individualRequest,individualMarkdown,setItemStatus,setItemAssetId,setItemPngAvailable,itemReadiness,parseNAFMarkdown,applyNAFRequest,loadMDFile,
     setBatchMode,setSourceMode,activityRule,getState:()=>({kind,mode,batchMode,sourceMode,batchCount:batchItems.length})};
 })();
