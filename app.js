@@ -341,17 +341,10 @@
       const id=document.createElement("input");id.type="text";id.maxLength=96;
       id.setAttribute("aria-label","ID definitivo imagen "+(index+1));
       id.placeholder="Pega el ID entregado por ChatGPT";id.value=item.progress.asset_id;
+      id.disabled=batchMode==="variants"&&sourceMode==="new"&&index===0&&
+        batchItems.slice(1).some(x=>x.progress.status!=="pending");
       id.addEventListener("input",()=>{item.progress.asset_id=id.value.trim();sync();});
-      id.addEventListener("change",()=>{
-        const next=id.value.trim();
-        if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
-           batchItems.slice(1).some(x=>x.progress.status!=="pending")&&
-           next!==item.progress.asset_id){
-          status("La imagen base ya tiene variantes iniciadas; no cambies su identidad.",true);
-          id.value=item.progress.asset_id;return;
-        }
-        renderBatch();sync();
-      });
+      id.addEventListener("change",()=>{renderBatch();sync();});
       idField.append(idLabel,id);trackerFields.append(statusField,idField);
       const png=document.createElement("label");png.className="batch-png-confirm";
       const pngCheck=document.createElement("input");pngCheck.type="checkbox";
@@ -416,9 +409,14 @@
     if(value==="approved"&&!item.progress.png_available){
       status("Marca primero que el PNG de esta imagen está disponible.",true);return false;
     }
+    const approvedId=item.progress.asset_id;
+    const validProductionId=validId.test(approvedId)&&approvedId.length<=96&&
+      approvedId.startsWith(kind==="portrait"?"portrait_":"scene_")&&
+      !batchItems.some((other,j)=>j!==index&&other.progress.asset_id===approvedId)&&
+      !(batchMode==="variants"&&sourceMode==="existing"&&approvedId===$("referenceId").value.trim());
     if(value==="zip_delivered"&&!(["approved","zip_delivered"].includes(item.progress.status)&&
-        item.progress.png_available&&validId.test(item.progress.asset_id))){
-      status("Antes del ZIP: aprueba el PNG y pega el ID definitivo válido.",true);return false;
+        item.progress.png_available&&validProductionId)){
+      status("Antes del ZIP: aprueba el PNG y pega un ID definitivo válido, único y diferente de la referencia.",true);return false;
     }
     if(batchMode==="variants"&&sourceMode==="new"&&index===0&&
        !["approved","zip_delivered"].includes(value)&&
@@ -434,8 +432,8 @@
     if(batchMode==="single"||index<0||index>=batchItems.length)return {ok:false,why:"No existe esta imagen."};
     const item=batchItems[index],p=item.progress;
     if(p.status==="rejected")return {ok:false,why:"Esta imagen está descartada."};
-    if(p.status==="zip_delivered")return {ok:false,why:"Ya tiene su ZIP entregado; cambia el estado para repetir el encargo."};
-    if(["approved"].includes(p.status))return {ok:false,why:"Esta imagen ya está aprobada. Solo falta su ID o la entrega del ZIP."};
+    if(p.status==="zip_delivered")return {ok:false,why:"ZIP entregado. No se generará de nuevo por accidente."};
+    if(p.status==="approved")return {ok:false,why:"PNG aprobado: guarda su ID definitivo y marca «ZIP entregado» cuando lo recibas."};
     if(batchMode==="variants"&&sourceMode==="existing"){
       if(!validId.test($("referenceId").value.trim()))return {ok:false,why:"Pega primero el ID de referencia en el bloque 01."};
       if(!externalPngAvailable)return {ok:false,why:"Confirma que dispones del PNG original para ChatGPT."};
@@ -557,7 +555,7 @@
       task.reference_asset_id=isVariant&&sourceMode==="existing"?base.reference_asset_id:null;
       task.asset_id_proposed=null;
       task.visual_production={
-        batch_id:batchId,visual_family_id:isVariant?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
+        batch_id:batchId,visual_family_id:batchMode==="variants"?familyId:batchId+"_independent_"+String(index+1).padStart(2,"0"),
         same_visual_identity:isVariant,reference_asset_id:task.reference_asset_id,
         pending_reference_from_batch_position:isVariant&&sourceMode==="new"?1:null,
         original_png_required:isVariant,
