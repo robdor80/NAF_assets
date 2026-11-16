@@ -31,7 +31,10 @@
   const fields="house place customPlace subject customSubject time weather season notes scale population camera portraitSex customSex portraitAge preferredId referenceId".split(" ");
   const validId=/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+_(?!000)[0-9]{3}$/;
   let kind="exterior",mode="new",manual=new Set();
-  let batchMode="single",batchItems=[],batchId="",sourceMode="new";
+  let batchMode="single",batchItems=[],batchId="",sourceMode="new",externalPngAvailable=false;
+  const progressStates=["pending","in_preparation","png_generated","approved","rejected","zip_delivered"];
+  const progressLabels={pending:"Pendiente",in_preparation:"En preparación",png_generated:"PNG generado",
+    approved:"Aprobada",rejected:"Descartada",zip_delivered:"ZIP entregado"};
   function slug(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
   function addOpt(v,t){const x=document.createElement("option");x.value=v;x.textContent=t;return x;}
   function fill(id,choices,preferred){$(id).replaceChildren(...choices.map(x=>addOpt(x[0],x[1])));if(choices.some(x=>x[0]===preferred))$(id).value=preferred;}
@@ -102,7 +105,7 @@
     $("summarySubject").textContent=focusName()||"Pendiente";
     $("summaryMode").textContent=mode==="new"?"Nueva":"Variante";
     $("summaryBatch").textContent=batchMode==="single"?"1 imagen":batchItems.length+(batchMode==="variants"?" variantes":" imágenes distintas");
-    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Descargar lote .md";
+    $("downloadLabel").textContent=batchMode==="single"?"Descargar solicitud .md":"Guardar lote y seguimiento .md";
     $("summaryFormat").textContent=kind==="portrait"?"4:5 · 768 × 960":"16:9 · 1920 × 1080";
     $("previewType").textContent=kind==="portrait"?"RETRATO":kind==="interior"?"ESCENA INTERIOR":"ESCENA EXTERIOR";
     $("previewGlyph").textContent=kind==="portrait"?"◉":kind==="interior"?"▣":"◇";
@@ -110,7 +113,7 @@
   }
   function save(){
     const o={kind,mode,manualOn:$("manualBibles").checked,manual:[...manual],
-      batchMode,sourceMode,batchItems:batchItems.map(i=>({...i})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
+      batchMode,sourceMode,externalPngAvailable,batchItems:batchItems.map(i=>({...i,progress:{...i.progress}})),batchId,batchTitle:$("batchTitle").value,familyName:$("familyName").value};
     fields.forEach(x=>o[x]=$(x).value);
     try{localStorage.setItem("naf_draft_v1",JSON.stringify(o));}catch(e){}
   }
@@ -126,6 +129,8 @@
     batchId=typeof o.batchId==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(o.batchId)?o.batchId:"";
     batchItems=Array.isArray(o.batchItems)?o.batchItems.slice(0,12).map(normalizeBatchItem):[];
     sourceMode=o.sourceMode==="existing"?"existing":"new";
+    externalPngAvailable=o.externalPngAvailable===true;
+    $("externalPngAvailable").checked=externalPngAvailable;
     setBatchMode(["variants","distinct"].includes(o.batchMode)?o.batchMode:"single",false);
     renderBibles();sync();
   }
@@ -168,6 +173,8 @@
       batchId=typeof data.batch.id==="string"&&/^naf_batch_[a-z0-9_]{6,80}$/.test(data.batch.id)?data.batch.id:"";
       batchItems=data.items.map(i=>normalizeBatchItem(i)).slice(0,12);
       sourceMode=data.batch.source_mode==="new"?"new":"existing";
+      externalPngAvailable=data.batch.external_png_available===true;
+      $("externalPngAvailable").checked=externalPngAvailable;
       setBatchMode(data.batch.mode,false);sync();
       return;
     }
@@ -246,12 +253,16 @@
   }
   function defaultBatchItem(index,kindOfBatch){
     return {weather:kindOfBatch==="variants"?(sourceMode==="new"?["despejado","lluvia_intensa","nieve"][index%3]:["lluvia_suave","lluvia_intensa","nieve"][index%3]):"auto",
-      time:"auto",season:"auto",notes:""};
+      time:"auto",season:"auto",notes:"",progress:{status:"pending",asset_id:"",png_available:false}};
   }
   function normalizeBatchItem(item){
     const pick=(id,v)=>Array.from($(id).options).some(o=>o.value===v)?v:"auto";
+    const progress=item?.progress||{};
     return {weather:pick("weather",item?.weather),time:pick("time",item?.time),
-      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):""};
+      season:pick("season",item?.season),notes:typeof item?.notes==="string"?item.notes.slice(0,400):"",
+      progress:{status:progressStates.includes(progress.status)?progress.status:"pending",
+        asset_id:typeof progress.asset_id==="string"?progress.asset_id.slice(0,96):"",
+        png_available:progress.png_available===true}};
   }
   function renderBatch(){
     document.querySelectorAll("[data-batch]").forEach(button=>{
@@ -262,6 +273,8 @@
     $("batchPanel").classList.toggle("is-hidden",batchMode==="single");
     $("familyWrap").classList.toggle("is-hidden",batchMode!=="variants");
     $("batchSourceWrap").classList.toggle("is-hidden",batchMode!=="variants");
+    $("externalPngWrap").classList.toggle("is-hidden",!(batchMode==="variants"&&sourceMode==="existing"));
+    $("externalPngAvailable").checked=externalPngAvailable;
     document.querySelectorAll("[data-source]").forEach(button=>{
       const selected=button.dataset.source===sourceMode;
       button.classList.toggle("is-active",selected);button.setAttribute("aria-pressed",String(selected));
@@ -273,6 +286,9 @@
       (sourceMode==="new"?"La primera imagen creará la identidad de la aldea. Las restantes se generarán DESPUÉS de que apruebes la primera y exista su ID real.":"Todas partirán del ID de la imagen original que pegues. Se preservará su identidad visual.")+ " No conservar NPC trabajando al aire libre durante un temporal.":
       "Cada elemento representará un lugar o personaje INDEPENDIENTE. Evitaremos repetir la misma taberna o los mismos personajes.";
     $("batchCount").textContent=String(batchItems.length);
+    const complete=batchItems.filter(x=>x.progress?.status==="zip_delivered").length;
+    $("batchProgress").textContent=complete+" de "+batchItems.length+" con ZIP entregado; "+
+      batchItems.filter(x=>["approved","zip_delivered"].includes(x.progress?.status)).length+" aprobadas.";
     $("addBatchBtn").disabled=batchItems.length>=12;
     const container=$("batchItems");
     container.replaceChildren();
@@ -283,7 +299,9 @@
       const label=document.createElement("strong");
       label.textContent=(batchMode==="variants"&&sourceMode==="new"&&index===0?"Imagen base ":batchMode==="variants"?"Variante ":"Imagen ")+String(index+1).padStart(2,"0");
       const remove=document.createElement("button");remove.type="button";
-      remove.className="batch-remove";remove.textContent="Quitar";remove.disabled=batchItems.length<=2;
+      remove.className="batch-remove";remove.textContent="Quitar";
+      remove.disabled=batchItems.length<=2||(batchMode==="variants"&&sourceMode==="new"&&index===0)||
+        ["approved","zip_delivered"].includes(item.progress.status);
       remove.addEventListener("click",()=>{
         if(batchItems.length<=2)return;
         batchItems.splice(index,1);renderBatch();sync();
@@ -328,6 +346,7 @@
     if(batchMode!=="variants")return;
     const previous=sourceMode;
     sourceMode=value==="existing"?"existing":"new";
+    externalPngAvailable=false;
     const defaults={new:["despejado","lluvia_intensa","nieve"],existing:["lluvia_suave","lluvia_intensa","nieve"]};
     batchItems=batchItems.map((item,i)=>{
       const untouched=item.weather===defaults[previous][i%3]&&item.time==="auto"&&item.season==="auto"&&!item.notes;
@@ -371,11 +390,11 @@
         activity_coherence:activityRule(kind,item.weather==="auto"?$("weather").value:item.weather,
           item.time==="auto"?$("time").value:item.time)
       };
-      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,request:task};
+      return {position:index+1,weather:item.weather,time:item.time,season:item.season,notes:item.notes,progress:{...item.progress},request:task};
     });
     return {naf_batch_schema_version:1,kind:"lote_de_solicitudes_no_paquete_nap",universe_id:"nimroel",
       batch:{id:batchId,title,mode:batchMode,source_mode:batchMode==="variants"?sourceMode:null,family_label:$("familyName").value.trim(),
-        visual_family_id:familyId,item_count:images.length,
+        visual_family_id:familyId,item_count:images.length,external_png_available:batchMode==="variants"&&sourceMode==="existing"?externalPngAvailable:false,
         approval_policy:"individual_png_review_before_id_and_zip"},
       base,items:images,
       nap_delivery:{one_zip_per_approved_image:true,zip_flat_five_files:true,
@@ -391,7 +410,8 @@
       "- Estación: "+item.request.appearance.season,
       "- Detalles: "+(item.notes||"Lo indicado en las biblias y la solicitud común"),
       "- Continuidad: "+(item.request.visual_production.same_visual_identity?"MISMO escenario que el PNG original":"NUEVA identidad, distinta de las otras"),
-      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,""
+      "- Actividad de NPC y animales: "+item.request.visual_production.activity_coherence,
+      "- Seguimiento: "+progressLabels[item.progress.status]+"; ID: "+(item.progress.asset_id||"pendiente")+"; PNG: "+(item.progress.png_available?"disponible":"no confirmado"),""
     ]);
     return [
       "# NAF — Lote: "+data.batch.title,"",
@@ -413,7 +433,7 @@
       "- robdor80/NAP/config/universes/nimroel/profile.json",
       "- robdor80/NAP/docs/MANIFEST_V2.md",
       "- robdor80/NAP/docs/NAMING_V1.md","",
-      "Generado con NAF v0.3."
+      "Generado con NAF v0.4."
     ].join("\n")+"\n";
   }
 
@@ -497,7 +517,7 @@
       "## Contrato de referencia NAP","",
       "- robdor80/NAP/config/universes/nimroel/profile.json",
       "- robdor80/NAP/docs/MANIFEST_V2.md",
-      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.2."
+      "- robdor80/NAP/docs/NAMING_V1.md","","Generado con NAF v0.4."
     ];
     return lines.join("\n")+"\n";
   }
@@ -529,7 +549,7 @@
     fields.forEach(x=>$(x).value="");
     ["time","weather","season","scale","population","camera"].forEach(x=>$(x).value="auto");
     $("house").value="valrik";$("manualBibles").checked=false;manual.clear();
-    batchMode="single";sourceMode="new";batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
+    batchMode="single";sourceMode="new";externalPngAvailable=false;batchItems=[];batchId="";$("batchTitle").value="";$("familyName").value="";
     setHouse("procedural");setKind("exterior");setMode("new");setBatchMode("single",false);
     document.querySelector(".advanced").open=false;sync();
   }
@@ -552,6 +572,9 @@
   document.querySelectorAll("[data-batch]").forEach(b=>b.addEventListener("click",()=>setBatchMode(b.dataset.batch)));
   document.querySelectorAll("[data-source]").forEach(b=>b.addEventListener("click",()=>setSourceMode(b.dataset.source)));
   $("addBatchBtn").addEventListener("click",addBatchItem);
+  $("externalPngAvailable").addEventListener("change",()=>{
+    externalPngAvailable=$("externalPngAvailable").checked;renderBatch();sync();
+  });
   $("batchTitle").addEventListener("input",sync);
   $("familyName").addEventListener("input",sync);
   $("downloadBtn").addEventListener("click",download);
